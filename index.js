@@ -44,7 +44,7 @@ app.post('/claude', async(req,res)=>{
         'anthropic-version':'2023-06-01'
       },
       body: JSON.stringify({
-        model:'claude-sonnet-4-20250514',
+        model:'claude-sonnet-4-5',
         max_tokens: max_tokens||600,
         system: system||'',
         messages
@@ -64,7 +64,7 @@ async function processarIA(texto, historico){
       method:'POST',
       headers:{'Content-Type':'application/json','x-api-key':process.env.ANTHROPIC_API_KEY,'anthropic-version':'2023-06-01'},
       body: JSON.stringify({
-        model:'claude-sonnet-4-20250514',
+        model:'claude-sonnet-4-5',
         max_tokens:500,
         system:`Você é Marina, recrutadora especializada da Hunters Manpower, empresa de mão de obra marítima e offshore. Seja cordial, profissional e objetiva. Valorize: disponibilidade, educação, comportamento, inglês, experiência e caráter. Se o candidato estiver ocupado, não insista - diga: "Gostaria de abençoar alguém com essa vaga? Pode enviar meu contato ou me enviar o contato que eu mesmo ligo." Pergunte sobre certificações marítimas (STCW, médico offshore, etc). Responda sempre em português.`,
         messages: msgs
