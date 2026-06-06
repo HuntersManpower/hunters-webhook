@@ -143,7 +143,21 @@ app.post('/claude', async(req,res)=>{
   }
 });
 
-// Bloco de mídia no formato da API Anthropic
+// Endpoint de login do app: confere a senha guardada no Render (APP_SENHA)
+app.post('/login', (req,res)=>{
+  try{
+    const { senha } = req.body;
+    if(!process.env.APP_SENHA){
+      return res.status(500).json({ok:false, erro:'Senha do app não configurada no servidor.'});
+    }
+    if(senha && senha === process.env.APP_SENHA){
+      return res.json({ok:true});
+    }
+    return res.status(401).json({ok:false});
+  }catch(e){
+    res.status(500).json({ok:false, erro:e.message});
+  }
+});
 function blocoMidia(midia){
   return midia.tipo === 'image'
     ? { type:'image', source:{ type:'base64', media_type: midia.media_type, data: midia.dados } }
@@ -294,7 +308,7 @@ async function enviarWA(telefone, mensagem){
 }
 
 app.get('/', (req,res)=>{
-  res.json({status:'Hunters Manpower Webhook ativo!',versao:'2.5'});
+  res.json({status:'Hunters Manpower Webhook ativo!',versao:'2.6'});
 });
 
 const PORT = process.env.PORT||3001;
