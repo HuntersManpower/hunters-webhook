@@ -11,6 +11,9 @@ app.use((req,res,next)=>{
 
 const conversas = {};
 
+// Certificados com validade de 5 anos
+const VALIDADE_5_ANOS = ['CBSP','THUET','CIR','STCW'];
+
 // Instruções da Marina: conversa natural, uma coisa de cada vez
 const SYSTEM_MARINA = `Você é Marina, recrutadora da Hunters Manpower, empresa com mais de 25 anos fornecendo mão de obra marítima e offshore (plataformas de petróleo).
 
@@ -30,19 +33,15 @@ O QUE VOCÊ PRECISA DESCOBRIR AO LONGO DA CONVERSA (sem pressa, um de cada vez):
 4. Certificados específicos da função, quando fizer sentido.
 5. Inglês (apenas para oficiais).
 6. Disponibilidade para embarque.
-7. Coleta de documentos: peça currículo e fotos dos certificados. A validade você lê na própria foto do documento; se não houver data de validade, calcule somando 5 anos à data de conclusão (ver regra abaixo).
+7. Coleta de documentos: peça currículo e fotos dos certificados.
 8. Encerramento: informe que Rogério, Marcelo ou Anderson entrará em contato para agendar a entrevista.
 
 ANÁLISE DE DOCUMENTOS:
-- Quando receber a FOTO de um certificado, leia o nome do certificado e a DATA DE VALIDADE impressa no documento.
-- REGRA DE VALIDADE (5 anos): os certificados CBSP, THUET, CIR e STCW têm validade de 5 anos a partir da data de conclusão/emissão. Se o documento NÃO trouxer uma data de validade explícita, calcule o vencimento somando 5 anos à data de conclusão do curso (ex: concluído em 03/2021 → vence em 03/2026).
-- VERIFICAÇÃO DE VALIDADE (muito importante): compare SEMPRE a data de vencimento (lida ou calculada) com a DATA DE HOJE informada no início desta conversa.
-  * Se o vencimento for ANTERIOR à data de hoje, o certificado está VENCIDO. Avise o candidato com clareza e educação (ex: "Notei que seu THUET venceu em [data]. Para a vaga ele precisa estar válido. Você consegue renovar?").
-  * Se ainda estiver dentro da validade, confirme com o candidato (ex: "Vi seu CBSP válido até [data], certo?").
-  * Quando tiver calculado o vencimento a partir da data de conclusão, diga isso ao candidato (ex: "Seu CBSP foi concluído em [data], então vale até [data]. Confere?").
-  * Nunca diga que um certificado está em dia sem ter comparado o vencimento com a data de hoje.
+- Quando receber a foto/PDF de um certificado, o sistema já verifica a validade para você e te informa o VEREDITO (válido ou vencido) numa observação técnica entre colchetes. Confie nesse veredito e comunique ao candidato de forma natural e educada.
+- Se o veredito disser VENCIDO, avise com clareza (ex: "Notei que seu THUET venceu em [data]. Para a vaga ele precisa estar válido. Você consegue renovar?").
+- Se disser VÁLIDO, confirme positivamente (ex: "Seu CBSP está válido até [data], ótimo!").
 - Quando receber um CURRÍCULO, leia a experiência, funções e tempo de embarque, e comente de forma natural.
-- Se a imagem ou documento estiver ilegível, peça com educação para reenviar com mais nitidez.
+- Se o documento estiver ilegível, peça com educação para reenviar com mais nitidez.
 
 SE A PESSOA NÃO TIVER INTERESSE OU DISPONIBILIDADE:
 Não insista. Use a frase: "Gostaria de abençoar alguém com essa vaga? Pode enviar meu contato ou me enviar o contato que eu mesmo ligo."
@@ -62,12 +61,10 @@ app.post('/webhook', async(req,res)=>{
     if(!telefone) return;
     const messageId = msg.key?.id;
 
-    // Texto direto
     let texto = msg.message?.conversation
       || msg.message?.extendedTextMessage?.text
       || '';
 
-    // Conteúdo de mídia para a IA (imagem ou PDF), quando houver
     let midia = null;
 
     const imagem = msg.message?.imageMessage;
@@ -90,9 +87,8 @@ app.post('/webhook', async(req,res)=>{
       const base64 = await baixarMidia(messageId);
       if(base64 && mime.includes('pdf')){
         midia = { tipo:'document', media_type:'application/pdf', dados: base64 };
-        if(!texto) texto = 'Segue meu currículo em PDF.';
+        if(!texto) texto = 'Segue meu certificado em PDF.';
       } else if(base64){
-        // documento que não é PDF (ex: docx) - não dá para enviar à IA como visual
         texto = 'Recebi seu arquivo. Se for o currículo, pode me mandar em PDF ou foto? Assim consigo analisar melhor.';
       } else {
         texto = 'Recebi seu arquivo mas não consegui abrir. Pode reenviar, por favor?';
@@ -105,11 +101,17 @@ app.post('/webhook', async(req,res)=>{
     if(!texto && !midia) return;
     console.log(`Mensagem de ${telefone}: ${texto}${midia?' [+ '+midia.tipo+']':''}`);
 
-    if(!conversas[telefone]) conversas[telefone]=[];
-    const resposta = await processarIA(texto, conversas[telefone], midia);
+    // Se houver mídia visual (imagem/PDF), verifica se é certificado e calcula validade
+    let veredito = '';
+    if(midia){
+      veredito = await verificarCertificado(midia);
+      if(veredito) console.log(`Veredito: ${veredito}`);
+    }
 
-    // Guarda no histórico apenas o texto (não o base64 da mídia, para não pesar)
-    conversas[telefone].push({role:'user',content: texto + (midia?` [enviou um ${midia.tipo==='image'?'documento em imagem':'PDF'}]`:'')});
+    if(!conversas[telefone]) conversas[telefone]=[];
+    const resposta = await processarIA(texto, conversas[telefone], midia, veredito);
+
+    conversas[telefone].push({role:'user',content: texto + (midia?` [enviou um documento]`:'')});
     conversas[telefone].push({role:'assistant',content:resposta});
     if(conversas[telefone].length>20) conversas[telefone]=conversas[telefone].slice(-20);
     await enviarWA(telefone, resposta);
@@ -141,22 +143,90 @@ app.post('/claude', async(req,res)=>{
   }
 });
 
-async function processarIA(texto, historico, midia){
+// Bloco de mídia no formato da API Anthropic
+function blocoMidia(midia){
+  return midia.tipo === 'image'
+    ? { type:'image', source:{ type:'base64', media_type: midia.media_type, data: midia.dados } }
+    : { type:'document', source:{ type:'base64', media_type:'application/pdf', data: midia.dados } };
+}
+
+// ETAPA 1: IA extrai datas do certificado (JSON). ETAPA 2: código calcula validade.
+async function verificarCertificado(midia){
   try{
-    // Monta a mensagem do usuário. Se houver mídia (imagem/PDF), envia junto.
+    const instrucao = `Analise este documento. Se NÃO for um certificado (ex: currículo, foto pessoal, outro), responda apenas: {"certificado":false}.
+Se for um certificado, responda APENAS com um JSON, sem texto ao redor, neste formato:
+{"certificado":true,"nome":"NOME DO CERTIFICADO (ex: CBSP, THUET, CIR, STCW ou outro)","data_validade":"DD/MM/AAAA ou null se não houver","data_conclusao":"DD/MM/AAAA ou null se não houver"}
+Use null (sem aspas) quando a data não existir no documento. Não invente datas.`;
+
+    const r = await fetch('https://api.anthropic.com/v1/messages',{
+      method:'POST',
+      headers:{'Content-Type':'application/json','x-api-key':process.env.ANTHROPIC_API_KEY,'anthropic-version':'2023-06-01'},
+      body: JSON.stringify({
+        model:'claude-sonnet-4-5',
+        max_tokens:300,
+        system:'Você extrai dados de documentos e responde somente em JSON puro, sem markdown, sem explicação.',
+        messages:[{role:'user', content:[ blocoMidia(midia), {type:'text', text:instrucao} ]}]
+      })
+    });
+    const d = await r.json();
+    let txt = (d.content?.[0]?.text || '').replace(/```json|```/g,'').trim();
+    let dados;
+    try{ dados = JSON.parse(txt); }catch(e){ console.error('JSON inválido do extrator:', txt); return ''; }
+
+    if(!dados.certificado) return ''; // não é certificado, segue conversa normal
+
+    const nome = (dados.nome||'').toUpperCase();
+    // Determina a data de vencimento
+    let vencimento = parseData(dados.data_validade);
+    let origemCalculo = '';
+    if(!vencimento && dados.data_conclusao){
+      const concl = parseData(dados.data_conclusao);
+      if(concl && VALIDADE_5_ANOS.some(c=>nome.includes(c))){
+        vencimento = new Date(concl); vencimento.setFullYear(vencimento.getFullYear()+5);
+        origemCalculo = ` (calculado: concluído em ${dados.data_conclusao} + 5 anos)`;
+      }
+    }
+
+    if(!vencimento){
+      return `[OBSERVAÇÃO TÉCNICA: documento identificado como certificado ${nome||''}, mas não foi possível determinar a validade. Peça ao candidato para confirmar a data de validade ou de conclusão.]`;
+    }
+
+    const hoje = new Date(); hoje.setHours(0,0,0,0);
+    const venc = new Date(vencimento); venc.setHours(0,0,0,0);
+    const vencStr = venc.toLocaleDateString('pt-BR');
+    const status = venc < hoje ? 'VENCIDO' : 'VÁLIDO';
+    return `[OBSERVAÇÃO TÉCNICA (não mostre os colchetes ao candidato): certificado ${nome||''} está ${status}. Vencimento: ${vencStr}${origemCalculo}.]`;
+  }catch(e){ console.error('Erro verificar certificado:',e); return ''; }
+}
+
+// Converte "DD/MM/AAAA" (ou variações) em Date. Retorna null se não der.
+function parseData(s){
+  if(!s || s==='null') return null;
+  const m = String(s).match(/(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})/);
+  if(m){
+    let [_,d,mes,a] = m;
+    if(a.length===2) a = '20'+a;
+    const dt = new Date(Number(a), Number(mes)-1, Number(d));
+    return isNaN(dt) ? null : dt;
+  }
+  // só mês/ano (MM/AAAA)
+  const m2 = String(s).match(/(\d{1,2})[\/\-.](\d{4})/);
+  if(m2){ const dt = new Date(Number(m2[2]), Number(m2[1])-1, 1); return isNaN(dt)?null:dt; }
+  return null;
+}
+
+async function processarIA(texto, historico, midia, veredito){
+  try{
     let conteudoUser;
+    const textoFinal = veredito ? `${texto}\n${veredito}` : texto;
     if(midia){
-      const bloco = midia.tipo === 'image'
-        ? { type:'image', source:{ type:'base64', media_type: midia.media_type, data: midia.dados } }
-        : { type:'document', source:{ type:'base64', media_type:'application/pdf', data: midia.dados } };
-      conteudoUser = [ bloco, { type:'text', text: texto } ];
+      conteudoUser = [ blocoMidia(midia), { type:'text', text: textoFinal } ];
     } else {
-      conteudoUser = texto;
+      conteudoUser = textoFinal;
     }
     const msgs = [...historico, {role:'user', content: conteudoUser}];
-    // Informa a data de hoje para a Marina conseguir verificar validade de certificados
     const hoje = new Date().toLocaleDateString('pt-BR',{timeZone:'America/Sao_Paulo',day:'2-digit',month:'long',year:'numeric'});
-    const systemComData = `DATA DE HOJE: ${hoje}. Use esta data para verificar se certificados estão válidos ou vencidos.\n\n` + SYSTEM_MARINA;
+    const systemComData = `DATA DE HOJE: ${hoje}.\n\n` + SYSTEM_MARINA;
     const r = await fetch('https://api.anthropic.com/v1/messages',{
       method:'POST',
       headers:{'Content-Type':'application/json','x-api-key':process.env.ANTHROPIC_API_KEY,'anthropic-version':'2023-06-01'},
@@ -172,7 +242,6 @@ async function processarIA(texto, historico, midia){
   }catch(e){console.error('Erro IA:',e); return 'Olá! Tudo bem? Sou da Hunters Manpower.';}
 }
 
-// Baixa qualquer mídia (imagem, pdf, áudio) pela Evolution API e devolve base64
 async function baixarMidia(messageId){
   try{
     const rb = await fetch(`${process.env.EVO_URL}/chat/getBase64FromMediaMessage/${process.env.EVO_INSTANCE}`,{
@@ -187,7 +256,6 @@ async function baixarMidia(messageId){
   }catch(e){ console.error('Erro baixar mídia:',e); return null; }
 }
 
-// Transcreve áudio com a Whisper (OpenAI)
 async function transcreverAudio(messageId){
   try{
     if(!process.env.OPENAI_API_KEY){
@@ -226,7 +294,7 @@ async function enviarWA(telefone, mensagem){
 }
 
 app.get('/', (req,res)=>{
-  res.json({status:'Hunters Manpower Webhook ativo!',versao:'2.4'});
+  res.json({status:'Hunters Manpower Webhook ativo!',versao:'2.5'});
 });
 
 const PORT = process.env.PORT||3001;
