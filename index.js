@@ -33,6 +33,11 @@ O QUE VOCÊ PRECISA DESCOBRIR AO LONGO DA CONVERSA (sem pressa, um de cada vez):
 7. Coleta de documentos: peça currículo e fotos dos certificados. A validade você lê na própria foto do documento, não calcule.
 8. Encerramento: informe que Rogério, Marcelo ou Anderson entrará em contato para agendar a entrevista.
 
+ANÁLISE DE DOCUMENTOS:
+- Quando receber a FOTO de um certificado, leia o nome do certificado e a DATA DE VALIDADE que está impressa no próprio documento. Confirme com o candidato o que você leu (ex: "Vi aqui seu CBSP válido até 03/2027, certo?").
+- Quando receber um CURRÍCULO, leia a experiência, funções e tempo de embarque, e comente de forma natural.
+- Se a imagem ou documento estiver ilegível, peça com educação para reenviar com mais nitidez.
+
 SE A PESSOA NÃO TIVER INTERESSE OU DISPONIBILIDADE:
 Não insista. Use a frase: "Gostaria de abençoar alguém com essa vaga? Pode enviar meu contato ou me enviar o contato que eu mesmo ligo."
 
@@ -49,26 +54,56 @@ app.post('/webhook', async(req,res)=>{
     if(!msg || msg.key?.fromMe) return;
     const telefone = msg.key?.remoteJid?.replace('@s.whatsapp.net','');
     if(!telefone) return;
+    const messageId = msg.key?.id;
 
     // Texto direto
     let texto = msg.message?.conversation
       || msg.message?.extendedTextMessage?.text
-      || msg.message?.imageMessage?.caption
       || '';
 
-    // Áudio: baixar e transcrever
+    // Conteúdo de mídia para a IA (imagem ou PDF), quando houver
+    let midia = null;
+
+    const imagem = msg.message?.imageMessage;
+    const documento = msg.message?.documentMessage
+      || msg.message?.documentWithCaptionMessage?.message?.documentMessage;
     const audio = msg.message?.audioMessage;
-    if(!texto && audio){
+
+    if(imagem){
+      console.log(`Imagem recebida de ${telefone}, baixando...`);
+      const base64 = await baixarMidia(messageId);
+      if(base64){
+        midia = { tipo:'image', media_type: imagem.mimetype || 'image/jpeg', dados: base64 };
+        if(!texto) texto = imagem.caption || 'Segue o documento em imagem.';
+      } else {
+        texto = 'Recebi sua imagem mas não consegui abrir. Pode reenviar, por favor?';
+      }
+    } else if(documento){
+      const mime = documento.mimetype || '';
+      console.log(`Documento recebido de ${telefone} (${mime}), baixando...`);
+      const base64 = await baixarMidia(messageId);
+      if(base64 && mime.includes('pdf')){
+        midia = { tipo:'document', media_type:'application/pdf', dados: base64 };
+        if(!texto) texto = 'Segue meu currículo em PDF.';
+      } else if(base64){
+        // documento que não é PDF (ex: docx) - não dá para enviar à IA como visual
+        texto = 'Recebi seu arquivo. Se for o currículo, pode me mandar em PDF ou foto? Assim consigo analisar melhor.';
+      } else {
+        texto = 'Recebi seu arquivo mas não consegui abrir. Pode reenviar, por favor?';
+      }
+    } else if(audio && !texto){
       console.log(`Áudio recebido de ${telefone}, transcrevendo...`);
-      texto = await transcreverAudio(msg.key?.id, telefone);
+      texto = await transcreverAudio(messageId);
     }
 
-    if(!texto) return;
-    console.log(`Mensagem de ${telefone}: ${texto}`);
+    if(!texto && !midia) return;
+    console.log(`Mensagem de ${telefone}: ${texto}${midia?' [+ '+midia.tipo+']':''}`);
 
     if(!conversas[telefone]) conversas[telefone]=[];
-    const resposta = await processarIA(texto, conversas[telefone]);
-    conversas[telefone].push({role:'user',content:texto});
+    const resposta = await processarIA(texto, conversas[telefone], midia);
+
+    // Guarda no histórico apenas o texto (não o base64 da mídia, para não pesar)
+    conversas[telefone].push({role:'user',content: texto + (midia?` [enviou um ${midia.tipo==='image'?'documento em imagem':'PDF'}]`:'')});
     conversas[telefone].push({role:'assistant',content:resposta});
     if(conversas[telefone].length>20) conversas[telefone]=conversas[telefone].slice(-20);
     await enviarWA(telefone, resposta);
@@ -100,31 +135,37 @@ app.post('/claude', async(req,res)=>{
   }
 });
 
-async function processarIA(texto, historico){
+async function processarIA(texto, historico, midia){
   try{
-    const msgs = [...historico, {role:'user',content:texto}];
+    // Monta a mensagem do usuário. Se houver mídia (imagem/PDF), envia junto.
+    let conteudoUser;
+    if(midia){
+      const bloco = midia.tipo === 'image'
+        ? { type:'image', source:{ type:'base64', media_type: midia.media_type, data: midia.dados } }
+        : { type:'document', source:{ type:'base64', media_type:'application/pdf', data: midia.dados } };
+      conteudoUser = [ bloco, { type:'text', text: texto } ];
+    } else {
+      conteudoUser = texto;
+    }
+    const msgs = [...historico, {role:'user', content: conteudoUser}];
     const r = await fetch('https://api.anthropic.com/v1/messages',{
       method:'POST',
       headers:{'Content-Type':'application/json','x-api-key':process.env.ANTHROPIC_API_KEY,'anthropic-version':'2023-06-01'},
       body: JSON.stringify({
         model:'claude-sonnet-4-5',
-        max_tokens:400,
+        max_tokens:500,
         system: SYSTEM_MARINA,
         messages: msgs
       })
     });
     const d = await r.json();
     return d.content?.[0]?.text || 'Olá! Tudo bem?';
-  }catch(e){return 'Olá! Tudo bem? Sou da Hunters Manpower.';}
+  }catch(e){console.error('Erro IA:',e); return 'Olá! Tudo bem? Sou da Hunters Manpower.';}
 }
 
-// Baixa o áudio pela Evolution API e transcreve com a Whisper (OpenAI)
-async function transcreverAudio(messageId, telefone){
+// Baixa qualquer mídia (imagem, pdf, áudio) pela Evolution API e devolve base64
+async function baixarMidia(messageId){
   try{
-    if(!process.env.OPENAI_API_KEY){
-      return 'Recebi seu áudio, mas no momento consigo ler apenas mensagens de texto. Pode me escrever, por favor?';
-    }
-    // 1. Pedir o base64 do áudio para a Evolution API
     const rb = await fetch(`${process.env.EVO_URL}/chat/getBase64FromMediaMessage/${process.env.EVO_INSTANCE}`,{
       method:'POST',
       headers:{'Content-Type':'application/json','apikey':process.env.EVO_KEY},
@@ -132,11 +173,19 @@ async function transcreverAudio(messageId, telefone){
     });
     const db = await rb.json();
     const base64 = db?.base64 || db?.media || db?.buffer;
-    if(!base64){
-      console.error('Sem base64 do áudio:', JSON.stringify(db).slice(0,300));
-      return 'Recebi seu áudio, mas não consegui abrir. Pode me escrever, por favor?';
+    if(!base64) console.error('Sem base64 da mídia:', JSON.stringify(db).slice(0,300));
+    return base64 || null;
+  }catch(e){ console.error('Erro baixar mídia:',e); return null; }
+}
+
+// Transcreve áudio com a Whisper (OpenAI)
+async function transcreverAudio(messageId){
+  try{
+    if(!process.env.OPENAI_API_KEY){
+      return 'Recebi seu áudio, mas no momento consigo ler apenas mensagens de texto. Pode me escrever, por favor?';
     }
-    // 2. Enviar para a Whisper transcrever
+    const base64 = await baixarMidia(messageId);
+    if(!base64) return 'Recebi seu áudio, mas não consegui abrir. Pode me escrever, por favor?';
     const audioBuffer = Buffer.from(base64,'base64');
     const form = new FormData();
     form.append('file', new Blob([audioBuffer],{type:'audio/ogg'}), 'audio.ogg');
@@ -168,7 +217,7 @@ async function enviarWA(telefone, mensagem){
 }
 
 app.get('/', (req,res)=>{
-  res.json({status:'Hunters Manpower Webhook ativo!',versao:'2.1'});
+  res.json({status:'Hunters Manpower Webhook ativo!',versao:'2.2'});
 });
 
 const PORT = process.env.PORT||3001;
