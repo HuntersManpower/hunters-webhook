@@ -36,6 +36,14 @@ O QUE VOCÊ PRECISA DESCOBRIR AO LONGO DA CONVERSA (sem pressa, um de cada vez):
 7. Coleta de documentos: peça currículo e fotos dos certificados.
 8. Encerramento: informe que Rogério, Marcelo ou Anderson entrará em contato para agendar a entrevista.
 
+APROVAÇÃO E ENVIO PARA A EQUIPE (muito importante):
+Um candidato só é APROVADO quando os TRÊS pontos forem confirmados:
+(a) ele QUER a vaga oferecida, (b) está DISPONÍVEL para o trabalho, (c) os certificados obrigatórios da vaga estão VÁLIDOS (conforme o veredito técnico do sistema).
+Antes de aprovar, CONFIRME diretamente com o candidato, em mensagens naturais: pergunte se ele realmente quer a vaga e se está disponível para embarcar/trabalhar. Só prossiga após ele confirmar "sim".
+Quando os três pontos estiverem confirmados, faça o encerramento normal E acrescente, na MESMA mensagem, ao final, uma marca técnica EXATAMENTE neste formato (o candidato não verá esta marca):
+[[APROVADO|nome=NOME DO CANDIDATO|telefone=TELEFONE|funcao=FUNÇÃO|certificados=LISTA DE CERTIFICADOS COM VALIDADE|experiencia=RESUMO DA EXPERIÊNCIA|disponibilidade=QUANDO ESTÁ DISPONÍVEL]]
+Preencha cada campo com o que você apurou na conversa. Use a marca [[APROVADO|...]] UMA ÚNICA VEZ por candidato, somente quando os três pontos estiverem confirmados. Se algum dos três não estiver ok, NÃO use a marca.
+
 GLOSSÁRIO DE FUNÇÕES E SIGLAS (use SOMENTE estes significados; NUNCA invente o que uma sigla significa — se não souber, pergunte ao candidato):
 NÁUTICA/CONVÉS: CLC = Capitão de Longo Curso; CCB = Capitão de Cabotagem; 1ON = Primeiro Oficial de Náutica; 2ON = Segundo Oficial de Náutica; MCB = Mestre de Cabotagem; CTR = Contramestre; MNC = Marinheiro de Convés; MOC = Moço de Convés; MAC = Auxiliar de Convés.
 MÁQUINAS: OSM = Oficial Superior de Máquinas; 1OM = Primeiro Oficial de Máquinas; 2OM = Segundo Oficial de Máquinas; CDM = Condutor de Máquinas; ELT = Eletricista; MNM = Marinheiro de Máquinas; MOM = Moço de Máquinas; MAM = Auxiliar de Máquinas.
@@ -44,7 +52,7 @@ OFFSHORE: BCO = Ballast Control Operator (operador de controle de lastro); OGD =
 TERMOS: FPSO = plataforma flutuante de produção; PLSV = embarcação de lançamento de dutos; ROV = robô submarino; DP = posicionamento dinâmico; DSV = embarcação de apoio a mergulho; SMS = Saúde, Meio Ambiente e Segurança; EPI/EPC = equipamentos de proteção.
 Se o candidato citar uma sigla que não está nesta lista, NÃO adivinhe — pergunte educadamente o que ele faz nessa função.
 
-
+ANÁLISE DE DOCUMENTOS:
 - Quando receber a foto/PDF de um certificado, o sistema já verifica a validade para você e te informa o VEREDITO (válido ou vencido) numa observação técnica entre colchetes. Confie nesse veredito e comunique ao candidato de forma natural e educada.
 - Se o veredito disser VENCIDO, avise com clareza (ex: "Notei que seu THUET venceu em [data]. Para a vaga ele precisa estar válido. Você consegue renovar?").
 - Se disser VÁLIDO, confirme positivamente (ex: "Seu CBSP está válido até [data], ótimo!").
@@ -65,7 +73,10 @@ app.post('/webhook', async(req,res)=>{
     if(body.event !== 'messages.upsert') return;
     const msg = body.data?.messages?.[0] || body.data;
     if(!msg || msg.key?.fromMe) return;
-    const telefone = msg.key?.remoteJid?.replace('@s.whatsapp.net','');
+    const remoteJid = msg.key?.remoteJid || '';
+    // Ignora mensagens de GRUPO: a Marina não responde nada em grupos, só posta aprovados.
+    if(remoteJid.includes('@g.us')) return;
+    const telefone = remoteJid.replace('@s.whatsapp.net','');
     if(!telefone) return;
     const messageId = msg.key?.id;
 
@@ -117,7 +128,16 @@ app.post('/webhook', async(req,res)=>{
     }
 
     if(!conversas[telefone]) conversas[telefone]=[];
-    const resposta = await processarIA(texto, conversas[telefone], midia, veredito);
+    let resposta = await processarIA(texto, conversas[telefone], midia, veredito);
+
+    // Detecta marca de aprovação [[APROVADO|...]] e envia resumo ao grupo da equipe
+    const marca = resposta.match(/\[\[APROVADO\|([\s\S]*?)\]\]/);
+    if(marca){
+      try{ await enviarAprovadoParaGrupo(marca[1], telefone); }
+      catch(e){ console.error('Erro ao enviar aprovado ao grupo:', e); }
+      // Remove a marca para o candidato não ver
+      resposta = resposta.replace(/\[\[APROVADO\|[\s\S]*?\]\]/g,'').trim();
+    }
 
     conversas[telefone].push({role:'user',content: texto + (midia?` [enviou um documento]`:'')});
     conversas[telefone].push({role:'assistant',content:resposta});
@@ -315,8 +335,40 @@ async function enviarWA(telefone, mensagem){
   }catch(e){console.error('Erro WA:',e);}
 }
 
+// Monta o resumo do candidato aprovado e envia ao grupo da equipe de operações
+async function enviarAprovadoParaGrupo(dadosBrutos, telefoneCandidato){
+  if(!process.env.GRUPO_ID){
+    console.error('GRUPO_ID não configurado — resumo não enviado ao grupo.');
+    return;
+  }
+  // dadosBrutos: "nome=...|telefone=...|funcao=...|certificados=...|experiencia=...|disponibilidade=..."
+  const campos = {};
+  dadosBrutos.split('|').forEach(p=>{
+    const i = p.indexOf('=');
+    if(i>0){ campos[p.slice(0,i).trim().toLowerCase()] = p.slice(i+1).trim(); }
+  });
+  const telefone = campos.telefone || telefoneCandidato || '—';
+  const resumo =
+`🚢 *NOVO CANDIDATO APROVADO*
+
+Nome: ${campos.nome||'—'}
+Telefone: ${telefone}
+Função: ${campos.funcao||'—'}
+Certificados: ${campos.certificados||'—'}
+Experiência: ${campos.experiencia||'—'}
+Disponibilidade: ${campos.disponibilidade||'—'}`;
+  try{
+    await fetch(`${process.env.EVO_URL}/message/sendText/${process.env.EVO_INSTANCE}`,{
+      method:'POST',
+      headers:{'Content-Type':'application/json','apikey':process.env.EVO_KEY},
+      body:JSON.stringify({number:process.env.GRUPO_ID,text:resumo})
+    });
+    console.log(`Candidato aprovado enviado ao grupo: ${campos.nome||telefone}`);
+  }catch(e){console.error('Erro ao enviar resumo ao grupo:',e);}
+}
+
 app.get('/', (req,res)=>{
-  res.json({status:'Hunters Manpower Webhook ativo!',versao:'2.7'});
+  res.json({status:'Hunters Manpower Webhook ativo!',versao:'2.8'});
 });
 
 const PORT = process.env.PORT||3001;
