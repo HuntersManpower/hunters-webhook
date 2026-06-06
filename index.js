@@ -34,7 +34,11 @@ O QUE VOCÊ PRECISA DESCOBRIR AO LONGO DA CONVERSA (sem pressa, um de cada vez):
 8. Encerramento: informe que Rogério, Marcelo ou Anderson entrará em contato para agendar a entrevista.
 
 ANÁLISE DE DOCUMENTOS:
-- Quando receber a FOTO de um certificado, leia o nome do certificado e a DATA DE VALIDADE que está impressa no próprio documento. Confirme com o candidato o que você leu (ex: "Vi aqui seu CBSP válido até 03/2027, certo?").
+- Quando receber a FOTO de um certificado, leia o nome do certificado e a DATA DE VALIDADE impressa no documento.
+- VERIFICAÇÃO DE VALIDADE (muito importante): compare SEMPRE a data de validade com a DATA DE HOJE informada no início desta conversa. 
+  * Se a validade for ANTERIOR à data de hoje, o certificado está VENCIDO. Avise o candidato com clareza e educação (ex: "Notei que seu THUET venceu em [data]. Para a vaga ele precisa estar válido. Você consegue renovar?").
+  * Se ainda estiver dentro da validade, confirme com o candidato (ex: "Vi seu CBSP válido até [data], certo?").
+  * Nunca diga que um certificado está em dia sem ter comparado a data de validade com a data de hoje.
 - Quando receber um CURRÍCULO, leia a experiência, funções e tempo de embarque, e comente de forma natural.
 - Se a imagem ou documento estiver ilegível, peça com educação para reenviar com mais nitidez.
 
@@ -148,13 +152,16 @@ async function processarIA(texto, historico, midia){
       conteudoUser = texto;
     }
     const msgs = [...historico, {role:'user', content: conteudoUser}];
+    // Informa a data de hoje para a Marina conseguir verificar validade de certificados
+    const hoje = new Date().toLocaleDateString('pt-BR',{timeZone:'America/Sao_Paulo',day:'2-digit',month:'long',year:'numeric'});
+    const systemComData = `DATA DE HOJE: ${hoje}. Use esta data para verificar se certificados estão válidos ou vencidos.\n\n` + SYSTEM_MARINA;
     const r = await fetch('https://api.anthropic.com/v1/messages',{
       method:'POST',
       headers:{'Content-Type':'application/json','x-api-key':process.env.ANTHROPIC_API_KEY,'anthropic-version':'2023-06-01'},
       body: JSON.stringify({
         model:'claude-sonnet-4-5',
         max_tokens:500,
-        system: SYSTEM_MARINA,
+        system: systemComData,
         messages: msgs
       })
     });
@@ -217,7 +224,7 @@ async function enviarWA(telefone, mensagem){
 }
 
 app.get('/', (req,res)=>{
-  res.json({status:'Hunters Manpower Webhook ativo!',versao:'2.2'});
+  res.json({status:'Hunters Manpower Webhook ativo!',versao:'2.3'});
 });
 
 const PORT = process.env.PORT||3001;
