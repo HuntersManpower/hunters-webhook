@@ -30,15 +30,17 @@ O QUE VOCÊ PRECISA DESCOBRIR AO LONGO DA CONVERSA (sem pressa, um de cada vez):
 4. Certificados específicos da função, quando fizer sentido.
 5. Inglês (apenas para oficiais).
 6. Disponibilidade para embarque.
-7. Coleta de documentos: peça currículo e fotos dos certificados. A validade você lê na própria foto do documento, não calcule.
+7. Coleta de documentos: peça currículo e fotos dos certificados. A validade você lê na própria foto do documento; se não houver data de validade, calcule somando 5 anos à data de conclusão (ver regra abaixo).
 8. Encerramento: informe que Rogério, Marcelo ou Anderson entrará em contato para agendar a entrevista.
 
 ANÁLISE DE DOCUMENTOS:
 - Quando receber a FOTO de um certificado, leia o nome do certificado e a DATA DE VALIDADE impressa no documento.
-- VERIFICAÇÃO DE VALIDADE (muito importante): compare SEMPRE a data de validade com a DATA DE HOJE informada no início desta conversa. 
-  * Se a validade for ANTERIOR à data de hoje, o certificado está VENCIDO. Avise o candidato com clareza e educação (ex: "Notei que seu THUET venceu em [data]. Para a vaga ele precisa estar válido. Você consegue renovar?").
+- REGRA DE VALIDADE (5 anos): os certificados CBSP, THUET, CIR e STCW têm validade de 5 anos a partir da data de conclusão/emissão. Se o documento NÃO trouxer uma data de validade explícita, calcule o vencimento somando 5 anos à data de conclusão do curso (ex: concluído em 03/2021 → vence em 03/2026).
+- VERIFICAÇÃO DE VALIDADE (muito importante): compare SEMPRE a data de vencimento (lida ou calculada) com a DATA DE HOJE informada no início desta conversa.
+  * Se o vencimento for ANTERIOR à data de hoje, o certificado está VENCIDO. Avise o candidato com clareza e educação (ex: "Notei que seu THUET venceu em [data]. Para a vaga ele precisa estar válido. Você consegue renovar?").
   * Se ainda estiver dentro da validade, confirme com o candidato (ex: "Vi seu CBSP válido até [data], certo?").
-  * Nunca diga que um certificado está em dia sem ter comparado a data de validade com a data de hoje.
+  * Quando tiver calculado o vencimento a partir da data de conclusão, diga isso ao candidato (ex: "Seu CBSP foi concluído em [data], então vale até [data]. Confere?").
+  * Nunca diga que um certificado está em dia sem ter comparado o vencimento com a data de hoje.
 - Quando receber um CURRÍCULO, leia a experiência, funções e tempo de embarque, e comente de forma natural.
 - Se a imagem ou documento estiver ilegível, peça com educação para reenviar com mais nitidez.
 
@@ -224,7 +226,7 @@ async function enviarWA(telefone, mensagem){
 }
 
 app.get('/', (req,res)=>{
-  res.json({status:'Hunters Manpower Webhook ativo!',versao:'2.3'});
+  res.json({status:'Hunters Manpower Webhook ativo!',versao:'2.4'});
 });
 
 const PORT = process.env.PORT||3001;
