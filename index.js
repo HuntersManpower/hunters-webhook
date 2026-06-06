@@ -36,7 +36,15 @@ O QUE VOCÊ PRECISA DESCOBRIR AO LONGO DA CONVERSA (sem pressa, um de cada vez):
 7. Coleta de documentos: peça currículo e fotos dos certificados.
 8. Encerramento: informe que Rogério, Marcelo ou Anderson entrará em contato para agendar a entrevista.
 
-ANÁLISE DE DOCUMENTOS:
+GLOSSÁRIO DE FUNÇÕES E SIGLAS (use SOMENTE estes significados; NUNCA invente o que uma sigla significa — se não souber, pergunte ao candidato):
+NÁUTICA/CONVÉS: CLC = Capitão de Longo Curso; CCB = Capitão de Cabotagem; 1ON = Primeiro Oficial de Náutica; 2ON = Segundo Oficial de Náutica; MCB = Mestre de Cabotagem; CTR = Contramestre; MNC = Marinheiro de Convés; MOC = Moço de Convés; MAC = Auxiliar de Convés.
+MÁQUINAS: OSM = Oficial Superior de Máquinas; 1OM = Primeiro Oficial de Máquinas; 2OM = Segundo Oficial de Máquinas; CDM = Condutor de Máquinas; ELT = Eletricista; MNM = Marinheiro de Máquinas; MOM = Moço de Máquinas; MAM = Auxiliar de Máquinas.
+SAÚDE/SERVIÇOS: CZR = Cozinheiro; TAA = Taifeiro; ENF = Enfermeiro.
+OFFSHORE: BCO = Ballast Control Operator (operador de controle de lastro); OGD = Guindasteiro; TST = Técnico de Segurança do Trabalho; HA = Homem de Área; IST = Instrumentista; Tec Mec = Técnico Mecânico; Rigger = Rigger; Sup Carg = Supervisor de Carga; Sup Merg = Supervisor de Mergulho; Mont And = Montador de Andaime; BBD = Bombeador; Sold = Soldador; Cald = Caldeireiro; ROP = Radioperador; Mooring Master = Mooring Master; OPC = Operador de Utilidades/Caldeira.
+TERMOS: FPSO = plataforma flutuante de produção; PLSV = embarcação de lançamento de dutos; ROV = robô submarino; DP = posicionamento dinâmico; DSV = embarcação de apoio a mergulho; SMS = Saúde, Meio Ambiente e Segurança; EPI/EPC = equipamentos de proteção.
+Se o candidato citar uma sigla que não está nesta lista, NÃO adivinhe — pergunte educadamente o que ele faz nessa função.
+
+
 - Quando receber a foto/PDF de um certificado, o sistema já verifica a validade para você e te informa o VEREDITO (válido ou vencido) numa observação técnica entre colchetes. Confie nesse veredito e comunique ao candidato de forma natural e educada.
 - Se o veredito disser VENCIDO, avise com clareza (ex: "Notei que seu THUET venceu em [data]. Para a vaga ele precisa estar válido. Você consegue renovar?").
 - Se disser VÁLIDO, confirme positivamente (ex: "Seu CBSP está válido até [data], ótimo!").
@@ -308,7 +316,7 @@ async function enviarWA(telefone, mensagem){
 }
 
 app.get('/', (req,res)=>{
-  res.json({status:'Hunters Manpower Webhook ativo!',versao:'2.6'});
+  res.json({status:'Hunters Manpower Webhook ativo!',versao:'2.7'});
 });
 
 const PORT = process.env.PORT||3001;
