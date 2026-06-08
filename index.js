@@ -10,6 +10,7 @@ app.use((req,res,next)=>{
 });
 
 const conversas = {};
+const aprovadosEnviados = {}; // trava: evita enviar o mesmo candidato 2x ao grupo
 
 // Certificados com validade de 5 anos
 const VALIDADE_5_ANOS = ['CBSP','THUET','CIR','STCW'];
@@ -52,12 +53,15 @@ OFFSHORE: BCO = Ballast Control Operator (operador de controle de lastro); OGD =
 TERMOS: FPSO = plataforma flutuante de produção; PLSV = embarcação de lançamento de dutos; ROV = robô submarino; DP = posicionamento dinâmico; DSV = embarcação de apoio a mergulho; SMS = Saúde, Meio Ambiente e Segurança; EPI/EPC = equipamentos de proteção.
 Se o candidato citar uma sigla que não está nesta lista, NÃO adivinhe — pergunte educadamente o que ele faz nessa função.
 
-ANÁLISE DE DOCUMENTOS:
-- Quando receber a foto/PDF de um certificado, o sistema já verifica a validade para você e te informa o VEREDITO (válido ou vencido) numa observação técnica entre colchetes. Confie nesse veredito e comunique ao candidato de forma natural e educada.
-- Se o veredito disser VENCIDO, avise com clareza (ex: "Notei que seu THUET venceu em [data]. Para a vaga ele precisa estar válido. Você consegue renovar?").
-- Se disser VÁLIDO, confirme positivamente (ex: "Seu CBSP está válido até [data], ótimo!").
+ANÁLISE DE DOCUMENTOS E VALIDADE DE CERTIFICADOS (regras críticas):
+- A validade de um certificado SÓ pode ser confirmada a partir da IMAGEM ou PDF do documento. NUNCA aceite, registre ou cite data de certificado que o candidato apenas FALOU, ESCREVEU ou DIGITOU no texto/áudio. Se ele disser "meu CBSP é válido até tal data", agradeça e peça a FOTO ou PDF do certificado para confirmar — sem a imagem, o certificado NÃO é considerado verificado.
+- Quando receber a foto/PDF, o sistema verifica a validade e te entrega o VEREDITO numa observação técnica entre colchetes. Você DEVE usar exatamente a data e o status (VÁLIDO/VENCIDO) que aparecem nessa observação. NÃO recalcule, NÃO reescreva e NÃO altere a data por conta própria — copie o que o veredito disser.
+- Se o veredito disser VÁLIDO, confirme de forma natural usando a data do veredito (ex: "Seu CIR está válido até [data do veredito], ótimo!").
+- Se disser VENCIDO, avise com clareza (ex: "Notei que seu THUET venceu em [data do veredito]. Para a vaga ele precisa estar válido. Você consegue renovar?").
+- Se o veredito disser que o documento está ILEGÍVEL ou incompleto, peça educadamente para reenviar a foto com nitidez e o documento inteiro. Não considere nenhuma data até receber uma imagem legível.
+- Se o veredito disser que não foi possível determinar a validade, peça ao candidato a foto da parte do certificado onde aparece a data de emissão/conclusão.
 - Quando receber um CURRÍCULO, leia a experiência, funções e tempo de embarque, e comente de forma natural.
-- Se o documento estiver ilegível, peça com educação para reenviar com mais nitidez.
+- NUNCA escreva a aprovação ([[APROVADO|...]]) de um candidato citando um certificado como válido se você não recebeu a imagem/PDF dele e não viu o veredito técnico confirmando. Sem imagem verificada, o certificado conta como NÃO comprovado.
 
 SE A PESSOA NÃO TIVER INTERESSE OU DISPONIBILIDADE:
 Não insista. Use a frase: "Gostaria de abençoar alguém com essa vaga? Pode enviar meu contato ou me enviar o contato que eu mesmo ligo."
@@ -197,8 +201,8 @@ async function verificarCertificado(midia){
   try{
     const instrucao = `Analise este documento. Se NÃO for um certificado (ex: currículo, foto pessoal, outro), responda apenas: {"certificado":false}.
 Se for um certificado, responda APENAS com um JSON, sem texto ao redor, neste formato:
-{"certificado":true,"nome":"NOME DO CERTIFICADO (ex: CBSP, THUET, CIR, STCW ou outro)","data_validade":"DD/MM/AAAA ou null se não houver","data_conclusao":"DD/MM/AAAA ou null se não houver"}
-Use null (sem aspas) quando a data não existir no documento. Não invente datas.`;
+{"certificado":true,"nome":"NOME DO CERTIFICADO (ex: CBSP, THUET, CIR, STCW ou outro)","data_validade":"DD/MM/AAAA da VALIDADE/VENCIMENTO impressa, ou null","data_conclusao":"DD/MM/AAAA da EMISSÃO/CONCLUSÃO/REALIZAÇÃO, ou null","legivel":true}
+IMPORTANTE: NÃO confunda data de emissão/conclusão com data de validade. A data de emissão/conclusão é quando o curso foi feito ou o documento foi emitido; a validade é quando ele expira. Se houver apenas UMA data e ela for claramente de emissão/realização, coloque em data_conclusao e deixe data_validade como null. Use null (sem aspas) quando a data não existir. Nunca invente nem estime datas. Se o documento estiver ilegível, borrado, cortado ou incompleto, responda {"certificado":true,"legivel":false}.`;
 
     const r = await fetch('https://api.anthropic.com/v1/messages',{
       method:'POST',
@@ -217,15 +221,33 @@ Use null (sem aspas) quando a data não existir no documento. Não invente datas
 
     if(!dados.certificado) return ''; // não é certificado, segue conversa normal
 
+    if(dados.legivel === false){
+      return `[OBSERVAÇÃO TÉCNICA: o documento parece ser um certificado, mas está ILEGÍVEL ou incompleto. Peça ao candidato, de forma educada, para reenviar a foto com boa nitidez e o documento inteiro. NÃO considere nenhuma data até receber uma imagem legível.]`;
+    }
+
     const nome = (dados.nome||'').toUpperCase();
     // Determina a data de vencimento
-    let vencimento = parseData(dados.data_validade);
+    let vencimento = null;
     let origemCalculo = '';
-    if(!vencimento && dados.data_conclusao){
-      const concl = parseData(dados.data_conclusao);
-      if(concl && VALIDADE_5_ANOS.some(c=>nome.includes(c))){
-        vencimento = new Date(concl); vencimento.setFullYear(vencimento.getFullYear()+5);
-        origemCalculo = ` (calculado: concluído em ${dados.data_conclusao} + 5 anos)`;
+    const ehCincoAnos = VALIDADE_5_ANOS.some(c=>nome.includes(c));
+
+    if(ehCincoAnos){
+      // CIR / STCW / CBSP / THUET: validade é SEMPRE emissão/conclusão + 5 anos.
+      // (Estes documentos costumam imprimir só a data de emissão; por isso
+      //  ignoramos qualquer "validade" extraída e calculamos a partir da emissão.)
+      const base = parseData(dados.data_conclusao) || parseData(dados.data_validade);
+      if(base){
+        vencimento = new Date(base);
+        vencimento.setFullYear(vencimento.getFullYear()+5);
+        const baseStr = (dados.data_conclusao && dados.data_conclusao!=='null')
+          ? dados.data_conclusao : dados.data_validade;
+        origemCalculo = ` (emissão/conclusão ${baseStr} + 5 anos)`;
+      }
+    } else {
+      // Demais certificados: usa a validade impressa; se não houver, a data de conclusão.
+      vencimento = parseData(dados.data_validade);
+      if(!vencimento && dados.data_conclusao){
+        vencimento = parseData(dados.data_conclusao);
       }
     }
 
@@ -341,13 +363,22 @@ async function enviarAprovadoParaGrupo(dadosBrutos, telefoneCandidato){
     console.error('GRUPO_ID não configurado — resumo não enviado ao grupo.');
     return;
   }
+  // Trava de duplicata: se já enviamos este candidato, não envia de novo
+  if(telefoneCandidato && aprovadosEnviados[telefoneCandidato]){
+    console.log('Candidato já enviado ao grupo, ignorando duplicata:', telefoneCandidato);
+    return;
+  }
+  if(telefoneCandidato) aprovadosEnviados[telefoneCandidato] = true;
+
   // dadosBrutos: "nome=...|telefone=...|funcao=...|certificados=...|experiencia=...|disponibilidade=..."
   const campos = {};
   dadosBrutos.split('|').forEach(p=>{
     const i = p.indexOf('=');
     if(i>0){ campos[p.slice(0,i).trim().toLowerCase()] = p.slice(i+1).trim(); }
   });
-  const telefone = campos.telefone || telefoneCandidato || '—';
+
+  // SEMPRE usa o telefone real da conversa (ignora o que a IA escreveu)
+  const telefone = telefoneCandidato || campos.telefone || '—';
   const resumo =
 `🚢 *NOVO CANDIDATO APROVADO*
 
@@ -368,7 +399,7 @@ Disponibilidade: ${campos.disponibilidade||'—'}`;
 }
 
 app.get('/', (req,res)=>{
-  res.json({status:'Hunters Manpower Webhook ativo!',versao:'2.8'});
+  res.json({status:'Hunters Manpower Webhook ativo!',versao:'2.9'});
 });
 
 const PORT = process.env.PORT||3001;
