@@ -203,7 +203,7 @@ async function verificarCertificado(midia){
     const instrucao = `Analise este documento. Se NÃO for um certificado (ex: currículo, foto pessoal, outro), responda apenas: {"certificado":false}.
 Se for um certificado, responda APENAS com um JSON, sem texto ao redor, neste formato:
 {"certificado":true,"nome":"NOME DO CERTIFICADO (ex: CBSP, THUET, CIR, STCW ou outro)","data_validade":"DD/MM/AAAA da VALIDADE/VENCIMENTO impressa, ou null","data_conclusao":"DD/MM/AAAA da EMISSÃO/CONCLUSÃO/REALIZAÇÃO, ou null","legivel":true}
-IMPORTANTE: NÃO confunda data de emissão/conclusão com data de validade. A data de emissão/conclusão é quando o curso foi feito ou o documento foi emitido; a validade é quando ele expira. Se houver apenas UMA data e ela for claramente de emissão/realização, coloque em data_conclusao e deixe data_validade como null. Use null (sem aspas) quando a data não existir. Nunca invente nem estime datas. Se o documento estiver ilegível, borrado, cortado ou incompleto, responda {"certificado":true,"legivel":false}.`;
+IMPORTANTE: NÃO confunda data de emissão/conclusão com data de validade. A data de emissão/conclusão é quando o curso foi feito ou o documento foi emitido; a validade é quando ele expira. Documentos da Marinha do Brasil (CIR, CBGRN) trazem os dois campos rotulados: "Data de Emissão" e "Data de Validade" — leia cada um com atenção e coloque no campo correto. Se houver apenas UMA data e ela for claramente de emissão/realização, coloque em data_conclusao e deixe data_validade como null. Use null (sem aspas) quando a data não existir. Leia os dias, meses e anos exatamente como impressos; nunca invente nem estime datas. Se o documento estiver ilegível, borrado, cortado ou incompleto, responda {"certificado":true,"legivel":false}.`;
 
     const r = await fetch('https://api.anthropic.com/v1/messages',{
       method:'POST',
@@ -232,22 +232,22 @@ IMPORTANTE: NÃO confunda data de emissão/conclusão com data de validade. A da
     let origemCalculo = '';
     const ehCincoAnos = VALIDADE_5_ANOS.some(c=>nome.includes(c));
 
-    if(ehCincoAnos){
-      // CIR / STCW / CBSP / THUET: validade é SEMPRE emissão/conclusão + 5 anos.
-      // (Estes documentos costumam imprimir só a data de emissão; por isso
-      //  ignoramos qualquer "validade" extraída e calculamos a partir da emissão.)
-      const base = parseData(dados.data_conclusao) || parseData(dados.data_validade);
-      if(base){
-        vencimento = new Date(base);
-        vencimento.setFullYear(vencimento.getFullYear()+5);
-        const baseStr = (dados.data_conclusao && dados.data_conclusao!=='null')
-          ? dados.data_conclusao : dados.data_validade;
-        origemCalculo = ` (emissão/conclusão ${baseStr} + 5 anos)`;
-      }
-    } else {
-      // Demais certificados: usa a validade impressa; se não houver, a data de conclusão.
-      vencimento = parseData(dados.data_validade);
-      if(!vencimento && dados.data_conclusao){
+    // Regra geral: SEMPRE usar a data de validade impressa quando ela existir.
+    vencimento = parseData(dados.data_validade);
+
+    if(!vencimento){
+      // Não há validade impressa.
+      if(ehCincoAnos){
+        // CIR / STCW / CBSP / THUET: se só houver a data de emissão/conclusão,
+        // a validade é emissão/conclusão + 5 anos.
+        const base = parseData(dados.data_conclusao);
+        if(base){
+          vencimento = new Date(base);
+          vencimento.setFullYear(vencimento.getFullYear()+5);
+          origemCalculo = ` (sem validade impressa; calculado: emissão/conclusão ${dados.data_conclusao} + 5 anos)`;
+        }
+      } else {
+        // Demais certificados: na falta de validade, usa a data de conclusão como referência.
         vencimento = parseData(dados.data_conclusao);
       }
     }
@@ -400,7 +400,7 @@ Disponibilidade: ${campos.disponibilidade||'—'}`;
 }
 
 app.get('/', (req,res)=>{
-  res.json({status:'Hunters Manpower Webhook ativo!',versao:'3.0'});
+  res.json({status:'Hunters Manpower Webhook ativo!',versao:'3.1'});
 });
 
 const PORT = process.env.PORT||3001;
