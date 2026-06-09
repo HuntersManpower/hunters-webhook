@@ -15,6 +15,113 @@ const aprovadosEnviados = {}; // trava: evita enviar o mesmo candidato 2x ao gru
 // Certificados com validade de 5 anos
 const VALIDADE_5_ANOS = ['CBSP','THUET','CIR','STCW'];
 
+// ===== MATRIZ DE TREINAMENTOS SBM OFFSHORE (planilha definitiva 05/06) =====
+// X = obrigatório | C = condicional (só se atuar em tarefa que exija)
+// ELIMINATÓRIOS de embarque: CBSP e THUET. PMSI é obrigatório mas NÃO eliminatório.
+const ELIMINATORIOS = ["CBSP","THUET"];
+
+const CERT_NOMES = {
+  "CBSP": "Curso Básico de Segurança de Plataforma (CBSP)",
+  "AFF": "Combate a Incêndio Avançado",
+  "TANK_BAS": "Curso Básico Operações de Carga em Navios-Tanque",
+  "TANK_ADV": "Curso Avançado Operações de Carga em Petroleiros",
+  "CESS": "CESS - Embarcações de Sobrevivência e Salvamento",
+  "GMDSS": "Curso de Radioperador GMDSS",
+  "DG_AIR": "Mercadorias Perigosas por via Aérea",
+  "SECURITY": "Proficiência em Deveres de Segurança Designados",
+  "NR33_ENT": "NR33 - Entrada em Espaço Confinado (16h)",
+  "NR33_SUP": "NR33 - Supervisor de Espaço Confinado (40h)",
+  "RIGGING": "Movimentação de Cargas (Rigging) NR-37/NR-34",
+  "CRANE_NR37": "Curso Complementar Operador de Guindaste NR-37",
+  "SCAFF": "Inspeção de Andaime NR34",
+  "NR35": "NR-35 - Trabalho em Altura",
+  "HELIDECK": "MCIA - Manobra e Combate a Incêndio de Aviação (Helideck)",
+  "NR13_BOIL": "NR-13 - Operação de Caldeiras (Anexo I-A)",
+  "NR13_PV": "NR-13 - Unidades de Processo / Vasos de Pressão (Anexo I-B)",
+  "NR10": "NR-10 Básico (Segurança em Eletricidade)",
+  "LEAK_NR34": "NR34 - Teste de Estanqueidade",
+  "NR37_BAS": "NR-37 Básico",
+  "NR37_ADV": "NR-37 Avançado",
+  "DG_SEA": "Mercadorias Perigosas por Mar (IMDG)",
+  "MAINT_SUP": "Certificação Supervisor de Manutenção",
+  "BARGE_SUP": "Certificação Supervisor de Lastro",
+  "BCO": "Certificação Operador de Controle de Lastro (BCO)",
+  "ACLS": "ACLS - Suporte Avançado de Vida em Cardiologia",
+  "ATLS": "ATLS - Suporte Avançado de Vida no Trauma",
+  "THUET": "THUET (escape de helicóptero) - OPITO",
+  "CRANE_L3": "Operações de Guindaste Offshore Nível 3",
+  "CAEBS": "CA-EBS - OPITO (para ESS)",
+  "PMSI": "Vendor PMSI (treinamento interno SBM, online)",
+};
+
+const MATRIZ_TREINAMENTOS = {
+  "Técnico de Laboratório": { jd:"JD21", obrig:["CBSP", "NR33_ENT", "NR35", "NR37_BAS", "NR37_ADV", "THUET", "CAEBS", "PMSI"], cond:[], elim:["CBSP", "THUET"] },
+  "2º Oficial de Máquinas / Operador de Manutenção": { jd:"JD32", obrig:["CBSP", "NR33_ENT", "NR35", "NR13_BOIL", "NR13_PV", "LEAK_NR34", "NR37_BAS", "NR37_ADV", "THUET", "CAEBS", "PMSI"], cond:[], elim:["CBSP", "THUET"] },
+  "Técnico de Elétrica": { jd:"JD24", obrig:["CBSP", "NR33_ENT", "NR35", "NR10", "NR37_BAS", "NR37_ADV", "THUET", "CAEBS", "PMSI"], cond:[], elim:["CBSP", "THUET"] },
+  "Técnico de Instrumentação": { jd:"JD25", obrig:["CBSP", "NR33_ENT", "NR35", "NR10", "NR37_BAS", "NR37_ADV", "THUET", "CAEBS", "PMSI"], cond:[], elim:["CBSP", "THUET"] },
+  "Técnico de Mecânica": { jd:"JD26", obrig:["CBSP", "NR33_ENT", "NR35", "NR13_PV", "NR37_BAS", "NR37_ADV", "THUET", "CAEBS", "PMSI"], cond:["HELIDECK"], elim:["CBSP", "THUET"] },
+  "Almoxarife": { jd:"JD28", obrig:["CBSP", "NR33_ENT", "NR35", "NR37_BAS", "NR37_ADV", "THUET", "CAEBS", "PMSI"], cond:["DG_AIR", "DG_SEA"], elim:["CBSP", "THUET"] },
+  "Assistente de Almoxarife": { jd:"JD38", obrig:["CBSP", "NR33_ENT", "NR35", "NR37_BAS", "NR37_ADV", "THUET", "CAEBS", "PMSI"], cond:["DG_AIR", "DG_SEA"], elim:["CBSP", "THUET"] },
+  "Supervisor de Carga": { jd:"JD10", obrig:["CBSP", "AFF", "TANK_ADV", "SECURITY", "NR33_SUP", "RIGGING", "NR35", "LEAK_NR34", "NR37_BAS", "NR37_ADV", "BCO", "THUET", "CAEBS", "PMSI"], cond:["CESS"], elim:["CBSP", "THUET"] },
+  "Operador de Carga": { jd:"JD31", obrig:["CBSP", "TANK_BAS", "NR33_ENT", "RIGGING", "NR35", "LEAK_NR34", "NR37_BAS", "NR37_ADV", "THUET", "CAEBS", "PMSI"], cond:["CESS"], elim:["CBSP", "THUET"] },
+  "Mestre de Cabotagem (Contramestre)": { jd:"JD34", obrig:["CBSP", "SECURITY", "NR33_ENT", "RIGGING", "NR35", "NR37_BAS", "NR37_ADV", "THUET", "CAEBS", "PMSI"], cond:["CESS", "DG_AIR", "HELIDECK", "DG_SEA"], elim:["CBSP", "THUET"] },
+  "Marinheiro de Convés": { jd:"JD36", obrig:["CBSP", "NR33_ENT", "RIGGING", "NR35", "NR37_BAS", "NR37_ADV", "THUET", "CAEBS", "PMSI"], cond:["CESS", "DG_AIR", "HELIDECK", "DG_SEA"], elim:["CBSP", "THUET"] },
+  "Homem de Área": { jd:"JD-GP", obrig:["CBSP", "NR33_ENT", "RIGGING", "NR35", "NR37_BAS", "NR37_ADV", "THUET", "CAEBS", "PMSI"], cond:["CESS", "DG_AIR", "HELIDECK", "DG_SEA"], elim:["CBSP", "THUET"] },
+  "Operador de Guindaste": { jd:"JD35", obrig:["CBSP", "SECURITY", "NR33_ENT", "RIGGING", "CRANE_NR37", "NR35", "NR37_BAS", "NR37_ADV", "THUET", "CRANE_L3", "CAEBS", "PMSI"], cond:["DG_AIR", "HELIDECK", "DG_SEA"], elim:["CBSP", "THUET"] },
+  "Técnico de Segurança": { jd:"JD7", obrig:["CBSP", "AFF", "NR33_SUP", "RIGGING", "SCAFF", "NR35", "LEAK_NR34", "NR37_BAS", "NR37_ADV", "THUET", "CAEBS", "PMSI"], cond:["DG_AIR", "HELIDECK", "DG_SEA"], elim:["CBSP", "THUET"] },
+  "Técnico de Segurança (Assistente)": { jd:"JD8", obrig:["CBSP", "NR33_ENT", "RIGGING", "SCAFF", "NR35", "NR37_BAS", "NR37_ADV", "THUET", "CAEBS", "PMSI"], cond:["DG_AIR", "HELIDECK", "DG_SEA"], elim:["CBSP", "THUET"] },
+  "Operador de Rádio": { jd:"JD29", obrig:["CBSP", "GMDSS", "NR37_BAS", "NR37_ADV", "THUET", "CAEBS", "PMSI"], cond:["NR35"], elim:["CBSP", "THUET"] },
+  "Operador de Produção": { jd:"JD30", obrig:["CBSP", "NR33_ENT", "NR35", "NR37_BAS", "NR37_ADV", "THUET", "CAEBS", "PMSI"], cond:[], elim:["CBSP", "THUET"] },
+};
+
+// Mapeia o que o candidato disser (sigla/nome livre) para uma função da MATRIZ_TREINAMENTOS.
+// Retorna a chave da matriz ou null se não reconhecer como função offshore SBM.
+function mapearFuncaoSBM(textoFuncao){
+  if(!textoFuncao) return null;
+  const t = textoFuncao.toLowerCase();
+  const regras = [
+    [["guindast","crane","ogd"], "Operador de Guindaste"],
+    [["mestre de cabotagem","contramestre","gp foreman","mcb"], "Mestre de Cabotagem (Contramestre)"],
+    [["marinheiro de conv","gp operator ab","mnc","convés","conves"], "Marinheiro de Convés"],
+    [["homem de área","homem de area"," ha","gp operator"], "Homem de Área"],
+    [["supervisor de carga","cargo sup","sup carg"], "Supervisor de Carga"],
+    [["operador de carga","cargo operator","bombeador","bbd","bco"], "Operador de Carga"],
+    [["instrument","ist"], "Técnico de Instrumentação"],
+    [["elétric","eletric","elt"], "Técnico de Elétrica"],
+    [["mecân","mecan","tec mec"], "Técnico de Mecânica"],
+    [["laborat","lab tech","tec lab"], "Técnico de Laboratório"],
+    [["almoxarife assist","assistente de almox"], "Assistente de Almoxarife"],
+    [["almoxarife","store keeper","storekeeper"], "Almoxarife"],
+    [["assistente de segur","assistant safety"], "Técnico de Segurança (Assistente)"],
+    [["segurança","seguranca","safety","tst"], "Técnico de Segurança"],
+    [["rádio","radio","rop","gmdss"], "Operador de Rádio"],
+    [["produção","producao","production operator","opc","utilidad"], "Operador de Produção"],
+    [["manutenção","manutencao","maintenance operator","oficial de máquinas","oficial de maquinas","mom","2om"], "2º Oficial de Máquinas / Operador de Manutenção"],
+  ];
+  for(const [chaves, alvo] of regras){
+    if(chaves.some(k=>t.includes(k))) return alvo;
+  }
+  return null;
+}
+
+// Monta um texto-guia da matriz para a função, para a Marina saber o que exigir/listar.
+function guiaMatriz(textoFuncao){
+  const chave = mapearFuncaoSBM(textoFuncao);
+  if(!chave || !MATRIZ_TREINAMENTOS[chave]) return '';
+  const f = MATRIZ_TREINAMENTOS[chave];
+  const nomeCert = c => CERT_NOMES[c] || c;
+  const elim = (f.elim||[]).map(nomeCert);
+  const obrigNaoElim = (f.obrig||[]).filter(c=>!(f.elim||[]).includes(c)).map(nomeCert);
+  const cond = (f.cond||[]).map(nomeCert);
+  let g = `\n\n[MATRIZ SBM — função reconhecida como "${chave}" (${f.jd}). Use estas regras de certificado para esta vaga offshore SBM:`;
+  g += `\n- ELIMINATÓRIOS (sem estes NÃO embarca; só aprove se válidos e comprovados por imagem): ${elim.join(', ')||'—'}.`;
+  g += `\n- OBRIGATÓRIOS não-eliminatórios (liste o que faltar como pendência, mas NÃO bloqueie a aprovação por causa deles; o candidato pode fazê-los antes de embarcar — inclui o PMSI, que é treinamento interno online da SBM): ${obrigNaoElim.join(', ')||'—'}.`;
+  g += `\n- CONDICIONAIS (só exija se o candidato for atuar em tarefa que requeira; caso contrário, ignore): ${cond.join(', ')||'—'}.`;
+  g += `\nNa aprovação, em "certificados", liste o status dos eliminatórios e relacione as pendências dos não-eliminatórios. Os eliminatórios só contam como válidos com imagem/PDF verificado pelo veredito técnico.]`;
+  return g;
+}
+
+
 // Instruções da Marina: conversa natural, uma coisa de cada vez
 const SYSTEM_MARINA = `Você é Marina, recrutadora da Hunters Manpower, empresa com mais de 25 anos fornecendo mão de obra marítima e offshore (plataformas de petróleo).
 
@@ -68,6 +175,13 @@ SE A PESSOA NÃO TIVER INTERESSE OU DISPONIBILIDADE:
 Não insista. Use a frase: "Gostaria de abençoar alguém com essa vaga? Pode enviar meu contato ou me enviar o contato que eu mesmo ligo."
 
 VALORES DA HUNTERS: disponibilidade, educação, bom comportamento, inglês, experiência e caráter. Falta de cortesia é eliminatória.
+
+MATRIZ DE TREINAMENTOS SBM (para vagas OFFSHORE da SBM Offshore):
+Quando a vaga for offshore para o cliente SBM e você identificar a função do candidato, o sistema te entregará, numa observação técnica entre colchetes começando com [MATRIZ SBM...], a lista de certificados ELIMINATÓRIOS, OBRIGATÓRIOS não-eliminatórios e CONDICIONAIS daquela função. Siga essa observação à risca:
+- ELIMINATÓRIOS (CBSP e THUET): sem eles, válidos e comprovados por imagem/PDF, o candidato NÃO pode ser aprovado. Trate como a regra dos três pontos.
+- OBRIGATÓRIOS não-eliminatórios (ex: NR-35, NR-33, NR-10, PMSI e outros): se faltarem, NÃO bloqueie a aprovação. Aprove e LISTE essas pendências no campo de certificados, de forma que a equipe saiba o que o candidato ainda precisa providenciar antes de embarcar. O PMSI é treinamento interno da SBM, feito online no ambiente deles antes do embarque — registre como pendência, nunca como impeditivo.
+- CONDICIONAIS: só pergunte/exija se o candidato for atuar em tarefa que requeira aquele curso; caso contrário, ignore.
+Se a observação [MATRIZ SBM...] não aparecer (ex: vaga puramente marítima, não-SBM), siga as regras de certificado marítimo já descritas (CIR para todos, STCW só para oficiais).
 
 Responda sempre em português, de forma cordial e profissional.`;
 
@@ -133,7 +247,14 @@ app.post('/webhook', async(req,res)=>{
     }
 
     if(!conversas[telefone]) conversas[telefone]=[];
-    let resposta = await processarIA(texto, conversas[telefone], midia, veredito);
+    // Tenta reconhecer a função (na mensagem atual ou no histórico) e anexa o guia da matriz SBM
+    let dicaMatriz = guiaMatriz(texto);
+    if(!dicaMatriz){
+      const ctx = conversas[telefone].map(x=>typeof x.content==='string'?x.content:'').join(' ');
+      dicaMatriz = guiaMatriz(ctx);
+    }
+    const veredictoComMatriz = (veredito||'') + (dicaMatriz||'');
+    let resposta = await processarIA(texto, conversas[telefone], midia, veredictoComMatriz);
 
     // Detecta marca de aprovação [[APROVADO|...]] e envia resumo ao grupo da equipe
     const marca = resposta.match(/\[\[APROVADO\|([\s\S]*?)\]\]/);
@@ -400,7 +521,7 @@ Disponibilidade: ${campos.disponibilidade||'—'}`;
 }
 
 app.get('/', (req,res)=>{
-  res.json({status:'Hunters Manpower Webhook ativo!',versao:'3.1'});
+  res.json({status:'Hunters Manpower Webhook ativo!',versao:'3.2'});
 });
 
 const PORT = process.env.PORT||3001;
