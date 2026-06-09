@@ -29,7 +29,8 @@ O QUE VOCÊ PRECISA DESCOBRIR AO LONGO DA CONVERSA (sem pressa, um de cada vez):
 1. Confirmar o interesse na vaga.
 2. Experiência da pessoa na área marítima/offshore e função que exerce.
 3. Certificados obrigatórios:
-   - Marítimo: CIR e STCW.
+   - Marítimo — CIR: obrigatório para TODOS os marítimos (oficiais e não-oficiais).
+   - Marítimo — STCW: obrigatório APENAS para OFICIAIS de náutica e de máquinas (CLC, CCB, 1ON, 2ON, OSM, 1OM, 2OM). NÃO peça STCW para as demais funções (MNC, MOC, MAC, CTR, MCB, CDM, ELT, MNM, MOM, MAM, CZA, TAA, ENF e outras). Para esses não-oficiais, cobre somente a CIR.
    - Offshore: CBSP e THUET (NÃO pergunte sobre HUET nem sobre certificado/atestado médico).
 4. Certificados específicos da função, quando fizer sentido.
 5. Inglês (apenas para oficiais).
@@ -48,7 +49,7 @@ Preencha cada campo com o que você apurou na conversa. Use a marca [[APROVADO|.
 GLOSSÁRIO DE FUNÇÕES E SIGLAS (use SOMENTE estes significados; NUNCA invente o que uma sigla significa — se não souber, pergunte ao candidato):
 NÁUTICA/CONVÉS: CLC = Capitão de Longo Curso; CCB = Capitão de Cabotagem; 1ON = Primeiro Oficial de Náutica; 2ON = Segundo Oficial de Náutica; MCB = Mestre de Cabotagem; CTR = Contramestre; MNC = Marinheiro de Convés; MOC = Moço de Convés; MAC = Auxiliar de Convés.
 MÁQUINAS: OSM = Oficial Superior de Máquinas; 1OM = Primeiro Oficial de Máquinas; 2OM = Segundo Oficial de Máquinas; CDM = Condutor de Máquinas; ELT = Eletricista; MNM = Marinheiro de Máquinas; MOM = Moço de Máquinas; MAM = Auxiliar de Máquinas.
-SAÚDE/SERVIÇOS: CZR = Cozinheiro; TAA = Taifeiro; ENF = Enfermeiro.
+SAÚDE/SERVIÇOS: CZA = Cozinheiro; TAA = Taifeiro; ENF = Enfermeiro.
 OFFSHORE: BCO = Ballast Control Operator (operador de controle de lastro); OGD = Guindasteiro; TST = Técnico de Segurança do Trabalho; HA = Homem de Área; IST = Instrumentista; Tec Mec = Técnico Mecânico; Rigger = Rigger; Sup Carg = Supervisor de Carga; Sup Merg = Supervisor de Mergulho; Mont And = Montador de Andaime; BBD = Bombeador; Sold = Soldador; Cald = Caldeireiro; ROP = Radioperador; Mooring Master = Mooring Master; OPC = Operador de Utilidades/Caldeira.
 TERMOS: FPSO = plataforma flutuante de produção; PLSV = embarcação de lançamento de dutos; ROV = robô submarino; DP = posicionamento dinâmico; DSV = embarcação de apoio a mergulho; SMS = Saúde, Meio Ambiente e Segurança; EPI/EPC = equipamentos de proteção.
 Se o candidato citar uma sigla que não está nesta lista, NÃO adivinhe — pergunte educadamente o que ele faz nessa função.
@@ -399,7 +400,7 @@ Disponibilidade: ${campos.disponibilidade||'—'}`;
 }
 
 app.get('/', (req,res)=>{
-  res.json({status:'Hunters Manpower Webhook ativo!',versao:'2.9'});
+  res.json({status:'Hunters Manpower Webhook ativo!',versao:'3.0'});
 });
 
 const PORT = process.env.PORT||3001;
