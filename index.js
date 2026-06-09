@@ -1,528 +1,742 @@
-const express = require('express');
-const app = express();
-app.use(express.json({limit:'25mb'}));
-app.use((req,res,next)=>{
-  res.header('Access-Control-Allow-Origin','*');
-  res.header('Access-Control-Allow-Headers','*');
-  res.header('Access-Control-Allow-Methods','*');
-  if(req.method==='OPTIONS') return res.sendStatus(200);
-  next();
-});
-
-const conversas = {};
-const aprovadosEnviados = {}; // trava: evita enviar o mesmo candidato 2x ao grupo
-
-// Certificados com validade de 5 anos
-const VALIDADE_5_ANOS = ['CBSP','THUET','CIR','STCW'];
-
-// ===== MATRIZ DE TREINAMENTOS SBM OFFSHORE (planilha definitiva 05/06) =====
-// X = obrigatório | C = condicional (só se atuar em tarefa que exija)
-// ELIMINATÓRIOS de embarque: CBSP e THUET. PMSI é obrigatório mas NÃO eliminatório.
-const ELIMINATORIOS = ["CBSP","THUET"];
-
-const CERT_NOMES = {
-  "CBSP": "Curso Básico de Segurança de Plataforma (CBSP)",
-  "AFF": "Combate a Incêndio Avançado",
-  "TANK_BAS": "Curso Básico Operações de Carga em Navios-Tanque",
-  "TANK_ADV": "Curso Avançado Operações de Carga em Petroleiros",
-  "CESS": "CESS - Embarcações de Sobrevivência e Salvamento",
-  "GMDSS": "Curso de Radioperador GMDSS",
-  "DG_AIR": "Mercadorias Perigosas por via Aérea",
-  "SECURITY": "Proficiência em Deveres de Segurança Designados",
-  "NR33_ENT": "NR33 - Entrada em Espaço Confinado (16h)",
-  "NR33_SUP": "NR33 - Supervisor de Espaço Confinado (40h)",
-  "RIGGING": "Movimentação de Cargas (Rigging) NR-37/NR-34",
-  "CRANE_NR37": "Curso Complementar Operador de Guindaste NR-37",
-  "SCAFF": "Inspeção de Andaime NR34",
-  "NR35": "NR-35 - Trabalho em Altura",
-  "HELIDECK": "MCIA - Manobra e Combate a Incêndio de Aviação (Helideck)",
-  "NR13_BOIL": "NR-13 - Operação de Caldeiras (Anexo I-A)",
-  "NR13_PV": "NR-13 - Unidades de Processo / Vasos de Pressão (Anexo I-B)",
-  "NR10": "NR-10 Básico (Segurança em Eletricidade)",
-  "LEAK_NR34": "NR34 - Teste de Estanqueidade",
-  "NR37_BAS": "NR-37 Básico",
-  "NR37_ADV": "NR-37 Avançado",
-  "DG_SEA": "Mercadorias Perigosas por Mar (IMDG)",
-  "MAINT_SUP": "Certificação Supervisor de Manutenção",
-  "BARGE_SUP": "Certificação Supervisor de Lastro",
-  "BCO": "Certificação Operador de Controle de Lastro (BCO)",
-  "ACLS": "ACLS - Suporte Avançado de Vida em Cardiologia",
-  "ATLS": "ATLS - Suporte Avançado de Vida no Trauma",
-  "THUET": "THUET (escape de helicóptero) - OPITO",
-  "CRANE_L3": "Operações de Guindaste Offshore Nível 3",
-  "CAEBS": "CA-EBS - OPITO (para ESS)",
-  "PMSI": "Vendor PMSI (treinamento interno SBM, online)",
-};
-
-const MATRIZ_TREINAMENTOS = {
-  "Técnico de Laboratório": { jd:"JD21", obrig:["CBSP", "NR33_ENT", "NR35", "NR37_BAS", "NR37_ADV", "THUET", "CAEBS", "PMSI"], cond:[], elim:["CBSP", "THUET"] },
-  "2º Oficial de Máquinas / Operador de Manutenção": { jd:"JD32", obrig:["CBSP", "NR33_ENT", "NR35", "NR13_BOIL", "NR13_PV", "LEAK_NR34", "NR37_BAS", "NR37_ADV", "THUET", "CAEBS", "PMSI"], cond:[], elim:["CBSP", "THUET"] },
-  "Técnico de Elétrica": { jd:"JD24", obrig:["CBSP", "NR33_ENT", "NR35", "NR10", "NR37_BAS", "NR37_ADV", "THUET", "CAEBS", "PMSI"], cond:[], elim:["CBSP", "THUET"] },
-  "Técnico de Instrumentação": { jd:"JD25", obrig:["CBSP", "NR33_ENT", "NR35", "NR10", "NR37_BAS", "NR37_ADV", "THUET", "CAEBS", "PMSI"], cond:[], elim:["CBSP", "THUET"] },
-  "Técnico de Mecânica": { jd:"JD26", obrig:["CBSP", "NR33_ENT", "NR35", "NR13_PV", "NR37_BAS", "NR37_ADV", "THUET", "CAEBS", "PMSI"], cond:["HELIDECK"], elim:["CBSP", "THUET"] },
-  "Almoxarife": { jd:"JD28", obrig:["CBSP", "NR33_ENT", "NR35", "NR37_BAS", "NR37_ADV", "THUET", "CAEBS", "PMSI"], cond:["DG_AIR", "DG_SEA"], elim:["CBSP", "THUET"] },
-  "Assistente de Almoxarife": { jd:"JD38", obrig:["CBSP", "NR33_ENT", "NR35", "NR37_BAS", "NR37_ADV", "THUET", "CAEBS", "PMSI"], cond:["DG_AIR", "DG_SEA"], elim:["CBSP", "THUET"] },
-  "Supervisor de Carga": { jd:"JD10", obrig:["CBSP", "AFF", "TANK_ADV", "SECURITY", "NR33_SUP", "RIGGING", "NR35", "LEAK_NR34", "NR37_BAS", "NR37_ADV", "BCO", "THUET", "CAEBS", "PMSI"], cond:["CESS"], elim:["CBSP", "THUET"] },
-  "Operador de Carga": { jd:"JD31", obrig:["CBSP", "TANK_BAS", "NR33_ENT", "RIGGING", "NR35", "LEAK_NR34", "NR37_BAS", "NR37_ADV", "THUET", "CAEBS", "PMSI"], cond:["CESS"], elim:["CBSP", "THUET"] },
-  "Mestre de Cabotagem (Contramestre)": { jd:"JD34", obrig:["CBSP", "SECURITY", "NR33_ENT", "RIGGING", "NR35", "NR37_BAS", "NR37_ADV", "THUET", "CAEBS", "PMSI"], cond:["CESS", "DG_AIR", "HELIDECK", "DG_SEA"], elim:["CBSP", "THUET"] },
-  "Marinheiro de Convés": { jd:"JD36", obrig:["CBSP", "NR33_ENT", "RIGGING", "NR35", "NR37_BAS", "NR37_ADV", "THUET", "CAEBS", "PMSI"], cond:["CESS", "DG_AIR", "HELIDECK", "DG_SEA"], elim:["CBSP", "THUET"] },
-  "Homem de Área": { jd:"JD-GP", obrig:["CBSP", "NR33_ENT", "RIGGING", "NR35", "NR37_BAS", "NR37_ADV", "THUET", "CAEBS", "PMSI"], cond:["CESS", "DG_AIR", "HELIDECK", "DG_SEA"], elim:["CBSP", "THUET"] },
-  "Operador de Guindaste": { jd:"JD35", obrig:["CBSP", "SECURITY", "NR33_ENT", "RIGGING", "CRANE_NR37", "NR35", "NR37_BAS", "NR37_ADV", "THUET", "CRANE_L3", "CAEBS", "PMSI"], cond:["DG_AIR", "HELIDECK", "DG_SEA"], elim:["CBSP", "THUET"] },
-  "Técnico de Segurança": { jd:"JD7", obrig:["CBSP", "AFF", "NR33_SUP", "RIGGING", "SCAFF", "NR35", "LEAK_NR34", "NR37_BAS", "NR37_ADV", "THUET", "CAEBS", "PMSI"], cond:["DG_AIR", "HELIDECK", "DG_SEA"], elim:["CBSP", "THUET"] },
-  "Técnico de Segurança (Assistente)": { jd:"JD8", obrig:["CBSP", "NR33_ENT", "RIGGING", "SCAFF", "NR35", "NR37_BAS", "NR37_ADV", "THUET", "CAEBS", "PMSI"], cond:["DG_AIR", "HELIDECK", "DG_SEA"], elim:["CBSP", "THUET"] },
-  "Operador de Rádio": { jd:"JD29", obrig:["CBSP", "GMDSS", "NR37_BAS", "NR37_ADV", "THUET", "CAEBS", "PMSI"], cond:["NR35"], elim:["CBSP", "THUET"] },
-  "Operador de Produção": { jd:"JD30", obrig:["CBSP", "NR33_ENT", "NR35", "NR37_BAS", "NR37_ADV", "THUET", "CAEBS", "PMSI"], cond:[], elim:["CBSP", "THUET"] },
-};
-
-// Mapeia o que o candidato disser (sigla/nome livre) para uma função da MATRIZ_TREINAMENTOS.
-// Retorna a chave da matriz ou null se não reconhecer como função offshore SBM.
-function mapearFuncaoSBM(textoFuncao){
-  if(!textoFuncao) return null;
-  const t = textoFuncao.toLowerCase();
-  const regras = [
-    [["guindast","crane","ogd"], "Operador de Guindaste"],
-    [["mestre de cabotagem","contramestre","gp foreman","mcb"], "Mestre de Cabotagem (Contramestre)"],
-    [["marinheiro de conv","gp operator ab","mnc","convés","conves"], "Marinheiro de Convés"],
-    [["homem de área","homem de area"," ha","gp operator"], "Homem de Área"],
-    [["supervisor de carga","cargo sup","sup carg"], "Supervisor de Carga"],
-    [["operador de carga","cargo operator","bombeador","bbd","bco"], "Operador de Carga"],
-    [["instrument","ist"], "Técnico de Instrumentação"],
-    [["elétric","eletric","elt"], "Técnico de Elétrica"],
-    [["mecân","mecan","tec mec"], "Técnico de Mecânica"],
-    [["laborat","lab tech","tec lab"], "Técnico de Laboratório"],
-    [["almoxarife assist","assistente de almox"], "Assistente de Almoxarife"],
-    [["almoxarife","store keeper","storekeeper"], "Almoxarife"],
-    [["assistente de segur","assistant safety"], "Técnico de Segurança (Assistente)"],
-    [["segurança","seguranca","safety","tst"], "Técnico de Segurança"],
-    [["rádio","radio","rop","gmdss"], "Operador de Rádio"],
-    [["produção","producao","production operator","opc","utilidad"], "Operador de Produção"],
-    [["manutenção","manutencao","maintenance operator","oficial de máquinas","oficial de maquinas","mom","2om"], "2º Oficial de Máquinas / Operador de Manutenção"],
-  ];
-  for(const [chaves, alvo] of regras){
-    if(chaves.some(k=>t.includes(k))) return alvo;
+{
+  "versao_matriz": "SBM 05/06 definitiva",
+  "regras": {
+    "eliminatorios_embarque": [
+      "CBSP",
+      "THUET"
+    ],
+    "pmsi_nota": "PMSI é treinamento interno SBM feito online no ambiente da SBM. Listar como obrigatório, mas NÃO eliminatório — pode ser feito antes de embarcar.",
+    "condicional_nota": "Certificado 'C' (condicional) só é exigido se o candidato for atuar em tarefa que o requeira. Listar como observação, não barrar."
+  },
+  "certificados": {
+    "CBSP": {
+      "cod": "CBSP",
+      "nome_en": "Basic Offshore Survival (CBSP/BOSIET/BST)",
+      "nome_pt": "Curso Básico de Segurança de Plataforma (CBSP)",
+      "grupo": "Legal Internacional",
+      "nivel": "ELIM_SEMPRE"
+    },
+    "AFF": {
+      "cod": "AFF",
+      "nome_en": "Advanced Fire Fighting (STCW A-VI/3)",
+      "nome_pt": "Combate a Incêndio Avançado",
+      "grupo": "Legal Internacional",
+      "nivel": "CRITICO"
+    },
+    "TANK_BAS": {
+      "cod": "TANK_BAS",
+      "nome_en": "Basic Tanker Cargo Ops (STCW A-V/1-1)",
+      "nome_pt": "Curso Básico Operações de Carga em Navios-Tanque",
+      "grupo": "Legal Internacional",
+      "nivel": "PADRAO"
+    },
+    "TANK_ADV": {
+      "cod": "TANK_ADV",
+      "nome_en": "Advanced Oil Tanker Cargo Ops (STCW A-V/1-1-2)",
+      "nome_pt": "Curso Avançado Operações de Carga em Petroleiros",
+      "grupo": "Legal Internacional",
+      "nivel": "CRITICO"
+    },
+    "CESS": {
+      "cod": "CESS",
+      "nome_en": "Survival Craft & Rescue Boats (STCW A-VI/2-1)",
+      "nome_pt": "CESS - Embarcações de Sobrevivência e Salvamento",
+      "grupo": "Legal Internacional",
+      "nivel": "PADRAO"
+    },
+    "GMDSS": {
+      "cod": "GMDSS",
+      "nome_en": "GMDSS Operator GOC/ROC (STCW A-IV/2)",
+      "nome_pt": "Curso de Radioperador GMDSS",
+      "grupo": "Legal Internacional",
+      "nivel": "ELIM_SOLICITADO"
+    },
+    "DG_AIR": {
+      "cod": "DG_AIR",
+      "nome_en": "Dangerous Goods by Air (CAA/IATA)",
+      "nome_pt": "Mercadorias Perigosas por via Aérea",
+      "grupo": "Legal Internacional",
+      "nivel": "PADRAO"
+    },
+    "SECURITY": {
+      "cod": "SECURITY",
+      "nome_en": "Designated Security Duties (STCW A-VI/6-2)",
+      "nome_pt": "Proficiência em Deveres de Segurança Designados",
+      "grupo": "Legal Internacional",
+      "nivel": "PADRAO"
+    },
+    "NR33_ENT": {
+      "cod": "NR33_ENT",
+      "nome_en": "Confined Space Entry NR33 (16h)",
+      "nome_pt": "NR33 - Entrada em Espaço Confinado (16h)",
+      "grupo": "Legal Nacional",
+      "nivel": "LEVE"
+    },
+    "NR33_SUP": {
+      "cod": "NR33_SUP",
+      "nome_en": "Confined Space Supervisor NR33 (40h)",
+      "nome_pt": "NR33 - Supervisor de Espaço Confinado (40h)",
+      "grupo": "Legal Nacional",
+      "nivel": "LEVE"
+    },
+    "RIGGING": {
+      "cod": "RIGGING",
+      "nome_en": "Rigging and Slinging NR-37/NR-34",
+      "nome_pt": "Movimentação de Cargas (Rigging) NR-37/NR-34",
+      "grupo": "Legal Nacional",
+      "nivel": "PADRAO"
+    },
+    "CRANE_NR37": {
+      "cod": "CRANE_NR37",
+      "nome_en": "Crane Operator Competency NR-37",
+      "nome_pt": "Curso Complementar Operador de Guindaste NR-37",
+      "grupo": "Legal Nacional",
+      "nivel": "PADRAO"
+    },
+    "SCAFF": {
+      "cod": "SCAFF",
+      "nome_en": "Scaffolding Inspection NR34",
+      "nome_pt": "Inspeção de Andaime NR34",
+      "grupo": "Legal Nacional",
+      "nivel": "CRITICO"
+    },
+    "NR35": {
+      "cod": "NR35",
+      "nome_en": "Working at Heights NR-35",
+      "nome_pt": "NR-35 - Trabalho em Altura",
+      "grupo": "Legal Nacional",
+      "nivel": "LEVE"
+    },
+    "HELIDECK": {
+      "cod": "HELIDECK",
+      "nome_en": "Helideck Firefighting / Brazilian HLO",
+      "nome_pt": "MCIA - Manobra e Combate a Incêndio de Aviação (Helideck)",
+      "grupo": "Legal Nacional",
+      "nivel": "PADRAO"
+    },
+    "NR13_BOIL": {
+      "cod": "NR13_BOIL",
+      "nome_en": "Boilers Safety NR-13 (Annex I-A)",
+      "nome_pt": "NR-13 - Operação de Caldeiras (Anexo I-A)",
+      "grupo": "Legal Nacional",
+      "nivel": "CRITICO"
+    },
+    "NR13_PV": {
+      "cod": "NR13_PV",
+      "nome_en": "Pressure Vessel Safety NR-13 (Annex I-B)",
+      "nome_pt": "NR-13 - Unidades de Processo / Vasos de Pressão (Anexo I-B)",
+      "grupo": "Legal Nacional",
+      "nivel": "CRITICO"
+    },
+    "NR10": {
+      "cod": "NR10",
+      "nome_en": "NR-10 Basic",
+      "nome_pt": "NR-10 Básico (Segurança em Eletricidade)",
+      "grupo": "Legal Nacional",
+      "nivel": "CRITICO"
+    },
+    "LEAK_NR34": {
+      "cod": "LEAK_NR34",
+      "nome_en": "Leak Testing NR34",
+      "nome_pt": "NR34 - Teste de Estanqueidade",
+      "grupo": "Legal Nacional",
+      "nivel": "CRITICO"
+    },
+    "NR37_BAS": {
+      "cod": "NR37_BAS",
+      "nome_en": "Basic Training NR 37",
+      "nome_pt": "NR-37 Básico",
+      "grupo": "Legal Nacional",
+      "nivel": "CRITICO"
+    },
+    "NR37_ADV": {
+      "cod": "NR37_ADV",
+      "nome_en": "Advanced Training NR 37",
+      "nome_pt": "NR-37 Avançado",
+      "grupo": "Legal Nacional",
+      "nivel": "CRITICO"
+    },
+    "DG_SEA": {
+      "cod": "DG_SEA",
+      "nome_en": "Dangerous Goods by Sea (IMDG)",
+      "nome_pt": "Mercadorias Perigosas por Mar (IMDG)",
+      "grupo": "IMO 1079",
+      "nivel": "PADRAO"
+    },
+    "MAINT_SUP": {
+      "cod": "MAINT_SUP",
+      "nome_en": "Maintenance Supervisor MOU (IMO A1079 6.5)",
+      "nome_pt": "Certificação Supervisor de Manutenção",
+      "grupo": "IMO 1079",
+      "nivel": "PADRAO"
+    },
+    "BARGE_SUP": {
+      "cod": "BARGE_SUP",
+      "nome_en": "Barge Supervisor MOU (IMO A1079 6.3)",
+      "nome_pt": "Certificação Supervisor de Lastro",
+      "grupo": "IMO 1079",
+      "nivel": "PADRAO"
+    },
+    "BCO": {
+      "cod": "BCO",
+      "nome_en": "Ballast Control Operator MOU (IMO A1079 6.4)",
+      "nome_pt": "Certificação Operador de Controle de Lastro (BCO)",
+      "grupo": "IMO 1079",
+      "nivel": "ELIM_SOLICITADO"
+    },
+    "ACLS": {
+      "cod": "ACLS",
+      "nome_en": "ACLS (Advanced Cardiac Life Support) / ECC",
+      "nome_pt": "ACLS - Suporte Avançado de Vida em Cardiologia",
+      "grupo": "SBM Específico",
+      "nivel": "PADRAO"
+    },
+    "ATLS": {
+      "cod": "ATLS",
+      "nome_en": "ATLS (Advanced Trauma Life Support) / ITLS",
+      "nome_pt": "ATLS - Suporte Avançado de Vida no Trauma",
+      "grupo": "SBM Específico",
+      "nivel": "PADRAO"
+    },
+    "THUET": {
+      "cod": "THUET",
+      "nome_en": "HUET/THUET by OPITO",
+      "nome_pt": "THUET (escape de helicóptero) - OPITO",
+      "grupo": "SBM Específico",
+      "nivel": "ELIM_SEMPRE"
+    },
+    "CRANE_L3": {
+      "cod": "CRANE_L3",
+      "nome_en": "Offshore Crane Operations Level 3",
+      "nome_pt": "Operações de Guindaste Offshore Nível 3",
+      "grupo": "Cliente",
+      "nivel": "PADRAO"
+    },
+    "CAEBS": {
+      "cod": "CAEBS",
+      "nome_en": "CA-EBS by OPITO (for ESS)",
+      "nome_pt": "CA-EBS - OPITO (para ESS)",
+      "grupo": "Cliente",
+      "nivel": "ELIM_SOLICITADO"
+    },
+    "PMSI": {
+      "cod": "PMSI",
+      "nome_pt": "Vendor PMSI (treinamento interno SBM, online)",
+      "nome_en": "Vendor PMSI (SBM internal online training)",
+      "grupo": "SBM Específico",
+      "nivel": "PADRAO"
+    }
+  },
+  "funcoes": {
+    "Técnico de Laboratório": {
+      "funcao_en": "Laboratory Technician",
+      "cod_jd": "JD21",
+      "categoria": "Offshore",
+      "obrigatorios": [
+        "CBSP",
+        "NR33_ENT",
+        "NR35",
+        "NR37_BAS",
+        "NR37_ADV",
+        "THUET",
+        "CAEBS",
+        "PMSI"
+      ],
+      "condicionais": [],
+      "eliminatorios": [
+        "CBSP",
+        "THUET",
+        "CAEBS"
+      ],
+      "resumo_funcao": "Responsável por garantir a especificação correta do produto (BS&W) por meio de amostragem e análise. Controla estoques e taxas de produtos químicos e comunica os relatórios de amostras.",
+      "pre_requisitos": "Formação em Química. 2 anos como Técnico de Laboratório na indústria de processamento de hidrocarbonetos (FPSO de preferência). Vivência em Permissão de Trabalho (PT), normas mecânicas e análise de risco. Apto em exame médico offshore (ENG1 ou equivalente).",
+      "maritimo": []
+    },
+    "2º Oficial de Máquinas / Operador de Manutenção": {
+      "funcao_en": "Maintenance Operator",
+      "cod_jd": "JD32",
+      "categoria": "Offshore",
+      "obrigatorios": [
+        "CBSP",
+        "NR33_ENT",
+        "NR35",
+        "NR13_BOIL",
+        "NR13_PV",
+        "LEAK_NR34",
+        "NR37_BAS",
+        "NR37_ADV",
+        "THUET",
+        "CAEBS",
+        "PMSI"
+      ],
+      "condicionais": [],
+      "eliminatorios": [
+        "CBSP",
+        "THUET",
+        "CAEBS"
+      ],
+      "resumo_funcao": "Executa manutenção e operação da praça de máquinas com alto padrão de segurança. Pode fazer solda, usinagem, ajuste de tubulação e montagem mecânica. Conforme a qualificação, atua como vigia júnior (watchkeeper).",
+      "pre_requisitos": "3 anos embarcado como tripulante de máquinas (STCW A-III/4) ou EOOW (A-III/1), com habilidades de manutenção/ajuste e qualificação em solda. Experiência em VLCC/navio de grande porte ou FPSO desejável/essencial conforme o grau. Apto offshore (ENG1).",
+      "maritimo": []
+    },
+    "Técnico de Elétrica": {
+      "funcao_en": "Electrical Technician",
+      "cod_jd": "JD24",
+      "categoria": "Offshore",
+      "obrigatorios": [
+        "CBSP",
+        "NR33_ENT",
+        "NR35",
+        "NR10",
+        "NR37_BAS",
+        "NR37_ADV",
+        "THUET",
+        "CAEBS",
+        "PMSI"
+      ],
+      "condicionais": [],
+      "eliminatorios": [
+        "CBSP",
+        "THUET",
+        "CAEBS"
+      ],
+      "resumo_funcao": "Executa manutenção elétrica na unidade com competência técnica e padrão exemplar de segurança. Responsável por manter a competência para as tarefas e por sistemas de geração e distribuição elétrica.",
+      "pre_requisitos": "Qualificação ONC/HNC ou NVQ Nível 3 (ou equivalente) em Manutenção Elétrica. Mínimo 5 anos (2 anos offshore petroquímico desejável). Conhecimento de PT, isolamento elétrico, análise de risco, PMS, geração em BT. Curso COMP-EX. Apto offshore (ENG1).",
+      "maritimo": []
+    },
+    "Técnico de Instrumentação": {
+      "funcao_en": "Instrument Technician",
+      "cod_jd": "JD25",
+      "categoria": "Offshore",
+      "obrigatorios": [
+        "CBSP",
+        "NR33_ENT",
+        "NR35",
+        "NR10",
+        "NR37_BAS",
+        "NR37_ADV",
+        "THUET",
+        "CAEBS",
+        "PMSI"
+      ],
+      "condicionais": [],
+      "eliminatorios": [
+        "CBSP",
+        "THUET",
+        "CAEBS"
+      ],
+      "resumo_funcao": "Garante que os trabalhos de instrumentação sejam feitos com segurança e eficiência, reportando todas as atividades ao supervisor, em especial as de segurança.",
+      "pre_requisitos": "Qualificação N/SVQ/HNC/HND em Instrumentação (ou equivalente local). 3 anos de experiência (offshore de preferência). Conhecimento de processamento de hidrocarbonetos, PT e isolamento. COMP-EX de preferência. Apto offshore (ENG1).",
+      "maritimo": []
+    },
+    "Técnico de Mecânica": {
+      "funcao_en": "Mechanical Technician",
+      "cod_jd": "JD26",
+      "categoria": "Offshore",
+      "obrigatorios": [
+        "CBSP",
+        "NR33_ENT",
+        "NR35",
+        "NR13_PV",
+        "NR37_BAS",
+        "NR37_ADV",
+        "THUET",
+        "CAEBS",
+        "PMSI"
+      ],
+      "condicionais": [
+        "HELIDECK"
+      ],
+      "eliminatorios": [
+        "CBSP",
+        "THUET",
+        "CAEBS"
+      ],
+      "resumo_funcao": "Garante que a manutenção e reparo mecânicos sejam executados com segurança, eficiência e conforme procedimento, reportando ao supervisor.",
+      "pre_requisitos": "Qualificação N/SVQ/HNC/HND em Mecânica (ou equivalente). 3 anos de experiência (offshore de preferência). Conhecimento de hidrocarbonetos, PT, isolamento mecânico, análise de risco. Apto offshore (ENG1).",
+      "maritimo": []
+    },
+    "Almoxarife": {
+      "funcao_en": "Store Keeper",
+      "cod_jd": "JD28",
+      "categoria": "Offshore",
+      "obrigatorios": [
+        "CBSP",
+        "NR33_ENT",
+        "NR35",
+        "NR37_BAS",
+        "NR37_ADV",
+        "THUET",
+        "CAEBS",
+        "PMSI"
+      ],
+      "condicionais": [
+        "DG_AIR",
+        "DG_SEA"
+      ],
+      "eliminatorios": [
+        "CBSP",
+        "THUET",
+        "CAEBS"
+      ],
+      "resumo_funcao": "Mantém alto padrão de controle e precisão administrativa sobre a movimentação de estoque no almoxarifado, garantindo registros exatos e atualizados.",
+      "pre_requisitos": "3 anos na indústria marítima/petróleo (FPSO de preferência). Experiência com sistemas de inventário em PC. Domínio de procedimentos de materiais, compras e gestão de estoque. Qualificação técnica. Apto offshore (ENG1).",
+      "maritimo": []
+    },
+    "Assistente de Almoxarife": {
+      "funcao_en": "Assistant Store Keeper",
+      "cod_jd": "JD38",
+      "categoria": "Offshore",
+      "obrigatorios": [
+        "CBSP",
+        "NR33_ENT",
+        "NR35",
+        "NR37_BAS",
+        "NR37_ADV",
+        "THUET",
+        "CAEBS",
+        "PMSI"
+      ],
+      "condicionais": [
+        "DG_AIR",
+        "DG_SEA"
+      ],
+      "eliminatorios": [
+        "CBSP",
+        "THUET",
+        "CAEBS"
+      ],
+      "resumo_funcao": "Garante disponibilidade e identificação correta de materiais e estoque, em apoio ao Almoxarife, sempre com manuseio seguro.",
+      "pre_requisitos": "1 ano na indústria marítima/petróleo (FPSO de preferência). Experiência com inventário em PC. Noções de procedimentos de materiais e estoque. Qualificação técnica. CMMS de preferência. Apto offshore (ENG1).",
+      "maritimo": []
+    },
+    "Supervisor de Carga": {
+      "funcao_en": "Cargo Supervisor",
+      "cod_jd": "JD10",
+      "categoria": "Offshore",
+      "obrigatorios": [
+        "CBSP",
+        "AFF",
+        "TANK_ADV",
+        "SECURITY",
+        "NR33_SUP",
+        "RIGGING",
+        "NR35",
+        "LEAK_NR34",
+        "NR37_BAS",
+        "NR37_ADV",
+        "BCO",
+        "THUET",
+        "CAEBS",
+        "PMSI"
+      ],
+      "condicionais": [
+        "CESS"
+      ],
+      "eliminatorios": [
+        "CBSP",
+        "BCO",
+        "THUET",
+        "CAEBS"
+      ],
+      "resumo_funcao": "Lidera e supervisiona com alto padrão de segurança todas as operações de sistemas de carga e utilidades de carga. Posição MSM conforme IMO A.1079/28.",
+      "pre_requisitos": "Qualificação STCW II/2 (Imediato de navios ≥3000 GT). 3 anos em petroleiros de óleo cru (VLCC de preferência) como OOW; experiência como Imediato desejável. FPSO uma vantagem. Apto offshore (ENG1).",
+      "maritimo": [
+        "CIR",
+        "STCW II/2"
+      ]
+    },
+    "Operador de Carga": {
+      "funcao_en": "Cargo Operator",
+      "cod_jd": "JD31",
+      "categoria": "Offshore",
+      "obrigatorios": [
+        "CBSP",
+        "TANK_BAS",
+        "NR33_ENT",
+        "RIGGING",
+        "NR35",
+        "LEAK_NR34",
+        "NR37_BAS",
+        "NR37_ADV",
+        "THUET",
+        "CAEBS",
+        "PMSI"
+      ],
+      "condicionais": [
+        "CESS"
+      ],
+      "eliminatorios": [
+        "CBSP",
+        "THUET",
+        "CAEBS"
+      ],
+      "resumo_funcao": "Garante com alto padrão de segurança que as operações e manutenção de sistemas de carga e utilidades sejam executadas de forma segura e eficaz.",
+      "pre_requisitos": "3 anos como Bombeador (Pumpman) em petroleiros (VLCC de preferência). Certificação STCW A-II/4. Conhecimento de PT, isolamento mecânico, análise de risco e COSHH. Apto offshore (ENG1).",
+      "maritimo": [
+        "CIR (de MNC ou MOC)"
+      ]
+    },
+    "Mestre de Cabotagem (Contramestre)": {
+      "funcao_en": "GP Foreman",
+      "cod_jd": "JD34",
+      "categoria": "Offshore",
+      "obrigatorios": [
+        "CBSP",
+        "SECURITY",
+        "NR33_ENT",
+        "RIGGING",
+        "NR35",
+        "NR37_BAS",
+        "NR37_ADV",
+        "THUET",
+        "CAEBS",
+        "PMSI"
+      ],
+      "condicionais": [
+        "CESS",
+        "DG_AIR",
+        "HELIDECK",
+        "DG_SEA"
+      ],
+      "eliminatorios": [
+        "CBSP",
+        "THUET",
+        "CAEBS"
+      ],
+      "resumo_funcao": "Supervisiona com alto padrão de segurança a manutenção de convés, rigging, peação, estiva e serviços gerais, controlando formalmente as tarefas delegadas à equipe.",
+      "pre_requisitos": "STCW A-II/4 (mínimo obrigatório). 5 anos em navios oceânicos, sendo ao menos 2 como Contramestre em petroleiros (VLCC de preferência). Experiência em operações de guindaste em unidades offshore desejável. Apto offshore (ENG1).",
+      "maritimo": [
+        "CIR"
+      ]
+    },
+    "Marinheiro de Convés": {
+      "funcao_en": "GP Operator AB",
+      "cod_jd": "JD36",
+      "categoria": "Offshore",
+      "obrigatorios": [
+        "CBSP",
+        "NR33_ENT",
+        "RIGGING",
+        "NR35",
+        "NR37_BAS",
+        "NR37_ADV",
+        "THUET",
+        "CAEBS",
+        "PMSI"
+      ],
+      "condicionais": [
+        "CESS",
+        "DG_AIR",
+        "HELIDECK",
+        "DG_SEA"
+      ],
+      "eliminatorios": [
+        "CBSP",
+        "THUET",
+        "CAEBS"
+      ],
+      "resumo_funcao": "Executa com alto padrão de segurança a manutenção de bordo, rigging, peação, estiva, limpeza e serviços gerais de convés. Posição MSM conforme IMO A.1079/28.",
+      "pre_requisitos": "Mais de 2 anos em função de convés na indústria offshore ou marítima. Certificação STCW A-II/5. Apto offshore (ENG1).",
+      "maritimo": [
+        "CIR"
+      ]
+    },
+    "Homem de Área": {
+      "funcao_en": "GP Operator",
+      "cod_jd": "JD-GP",
+      "categoria": "Offshore",
+      "obrigatorios": [
+        "CBSP",
+        "NR33_ENT",
+        "RIGGING",
+        "NR35",
+        "NR37_BAS",
+        "NR37_ADV",
+        "THUET",
+        "CAEBS",
+        "PMSI"
+      ],
+      "condicionais": [
+        "CESS",
+        "DG_AIR",
+        "HELIDECK",
+        "DG_SEA"
+      ],
+      "eliminatorios": [
+        "CBSP",
+        "THUET",
+        "CAEBS"
+      ],
+      "resumo_funcao": "Atua na movimentação de cargas junto ao guindasteiro, sob o comando do contramestre de movimentação. Também faz limpeza e manutenção geral do convés e auxilia nos trabalhos da equipe de movimentação.",
+      "pre_requisitos": "Ensino fundamental completo. Conhecimentos de inglês. Capacitação em movimentação de cargas. Mínimo 1 ano comprovado em movimentação de carga offshore (em carteira).",
+      "maritimo": []
+    },
+    "Operador de Guindaste": {
+      "funcao_en": "Crane Driver",
+      "cod_jd": "JD35",
+      "categoria": "Offshore",
+      "obrigatorios": [
+        "CBSP",
+        "SECURITY",
+        "NR33_ENT",
+        "RIGGING",
+        "CRANE_NR37",
+        "NR35",
+        "NR37_BAS",
+        "NR37_ADV",
+        "THUET",
+        "CRANE_L3",
+        "CAEBS",
+        "PMSI"
+      ],
+      "condicionais": [
+        "DG_AIR",
+        "HELIDECK",
+        "DG_SEA"
+      ],
+      "eliminatorios": [
+        "CBSP",
+        "THUET",
+        "CAEBS"
+      ],
+      "resumo_funcao": "Opera guindastes com alto padrão de segurança e garante que rigging, peação e manutenção/operação dos equipamentos de içamento sejam executados de forma segura.",
+      "pre_requisitos": "Qualificação reconhecida em Operação de Guindaste (Nível 3). Experiência em operações de guindaste em unidades offshore. Experiência em rigging/peação e convés. STCW A-II/4 de preferência. Apto offshore (ENG1).",
+      "maritimo": []
+    },
+    "Técnico de Segurança": {
+      "funcao_en": "Safety Officer",
+      "cod_jd": "JD7",
+      "categoria": "Offshore",
+      "obrigatorios": [
+        "CBSP",
+        "AFF",
+        "NR33_SUP",
+        "RIGGING",
+        "SCAFF",
+        "NR35",
+        "LEAK_NR34",
+        "NR37_BAS",
+        "NR37_ADV",
+        "THUET",
+        "CAEBS",
+        "PMSI"
+      ],
+      "condicionais": [
+        "DG_AIR",
+        "HELIDECK",
+        "DG_SEA"
+      ],
+      "eliminatorios": [
+        "CBSP",
+        "THUET",
+        "CAEBS"
+      ],
+      "resumo_funcao": "Garante a implementação eficaz do Sistema de Gestão e dos COPs associados, assegurando que operações e manutenções diárias sigam os requisitos do Sistema de Gestão.",
+      "pre_requisitos": "NEBOSH Cert (mínimo) — NEBOSH Diploma uma vantagem. Mínimo 5 anos em operações de produção de hidrocarbonetos OU 5 anos como Téc. de Segurança em ambiente similar. FPSO de preferência. Domínio de PT, análise de risco, teste de gases, trabalho a quente e espaço confinado. Experiência com operações de helicóptero (HLO de preferência). Apto offshore (ENG1).",
+      "maritimo": []
+    },
+    "Técnico de Segurança (Assistente)": {
+      "funcao_en": "Assistant Safety Officer",
+      "cod_jd": "JD8",
+      "categoria": "Offshore",
+      "obrigatorios": [
+        "CBSP",
+        "NR33_ENT",
+        "RIGGING",
+        "SCAFF",
+        "NR35",
+        "NR37_BAS",
+        "NR37_ADV",
+        "THUET",
+        "CAEBS",
+        "PMSI"
+      ],
+      "condicionais": [
+        "DG_AIR",
+        "HELIDECK",
+        "DG_SEA"
+      ],
+      "eliminatorios": [
+        "CBSP",
+        "THUET",
+        "CAEBS"
+      ],
+      "resumo_funcao": "Apoia o Técnico de Segurança na implementação do Sistema de Gestão e COPs, garantindo que operações e manutenções diárias sigam os requisitos.",
+      "pre_requisitos": "Experiência em manutenção de equipamentos de combate a incêndio (FFE) e salvatagem (LSA). Experiência com operações de helicóptero. Familiaridade com Sistemas de Gestão de Segurança, PT, análise de risco e teste de gases. FPSO de preferência. Apto offshore (ENG1).",
+      "maritimo": []
+    },
+    "Operador de Rádio": {
+      "funcao_en": "Radio Operator",
+      "cod_jd": "JD29",
+      "categoria": "Offshore",
+      "obrigatorios": [
+        "CBSP",
+        "GMDSS",
+        "NR37_BAS",
+        "NR37_ADV",
+        "THUET",
+        "CAEBS",
+        "PMSI"
+      ],
+      "condicionais": [
+        "NR35"
+      ],
+      "eliminatorios": [
+        "CBSP",
+        "GMDSS",
+        "THUET",
+        "CAEBS"
+      ],
+      "resumo_funcao": "Garante a eficácia das comunicações de rádio e a manutenção de primeiro nível dos equipamentos de comunicação.",
+      "pre_requisitos": "Qualificação em radiooperações/tráfego aéreo ou STCW A-IV/2 (requisitos para pessoal de rádio GMDSS). Informática prática (Excel/Word). Experiência em manutenção de telecom desejável. Offshore de preferência. Apto offshore (ENG1).",
+      "maritimo": []
+    },
+    "Operador de Produção": {
+      "funcao_en": "Production Operator",
+      "cod_jd": "JD30",
+      "categoria": "Offshore",
+      "obrigatorios": [
+        "CBSP",
+        "NR33_ENT",
+        "NR35",
+        "NR37_BAS",
+        "NR37_ADV",
+        "THUET",
+        "CAEBS",
+        "PMSI"
+      ],
+      "condicionais": [],
+      "eliminatorios": [
+        "CBSP",
+        "THUET",
+        "CAEBS"
+      ],
+      "resumo_funcao": "Opera os sistemas de processo e utilidades da planta de forma segura e eficaz, seguindo procedimentos e a conformidade regulatória. Auxilia na manutenção de rotina com isolamentos e reinstalações.",
+      "pre_requisitos": "Qualificação N/SVQ Processamento de Hidrocarbonetos Nível 2 (ou equivalente). 2 anos em sistemas de processamento de hidrocarbonetos e utilidades. Conhecimento de ESD, F&G e DCS. Domínio de PT, isolamento mecânico e análise de risco. Apto offshore (ENG1).",
+      "maritimo": []
+    }
+  },
+  "niveis_texto": {
+    "ELIM_SEMPRE": "ELIMINATÓRIO (sem ele, válido e comprovado por imagem, NÃO aprova)",
+    "ELIM_SOLICITADO": "ELIMINATÓRIO quando exigido para a função (mesmo peso de CBSP/THUET; sem ele não aprova)",
+    "CRITICO": "CRÍTICO — a Hunters NÃO fornece; avise o candidato com URGÊNCIA que precisa providenciar por conta (curso longo). Não barra a triagem, mas deixe claro que é indispensável para embarcar",
+    "LEVE": "A HUNTERS FORNECE — pode tranquilizar o candidato de que a empresa oferece este curso. Não barra",
+    "PADRAO": "Obrigatório — liste como pendência a providenciar antes do embarque. Não barra"
+  },
+  "maritimo_por_funcao": {
+    "Supervisor de Carga": [
+      "CIR",
+      "STCW II/2"
+    ],
+    "Mestre de Cabotagem (Contramestre)": [
+      "CIR"
+    ],
+    "Marinheiro de Convés": [
+      "CIR"
+    ],
+    "Operador de Carga": [
+      "CIR (de MNC ou MOC)"
+    ]
   }
-  return null;
 }
-
-// Monta um texto-guia da matriz para a função, para a Marina saber o que exigir/listar.
-function guiaMatriz(textoFuncao){
-  const chave = mapearFuncaoSBM(textoFuncao);
-  if(!chave || !MATRIZ_TREINAMENTOS[chave]) return '';
-  const f = MATRIZ_TREINAMENTOS[chave];
-  const nomeCert = c => CERT_NOMES[c] || c;
-  const elim = (f.elim||[]).map(nomeCert);
-  const obrigNaoElim = (f.obrig||[]).filter(c=>!(f.elim||[]).includes(c)).map(nomeCert);
-  const cond = (f.cond||[]).map(nomeCert);
-  let g = `\n\n[MATRIZ SBM — função reconhecida como "${chave}" (${f.jd}). Use estas regras de certificado para esta vaga offshore SBM:`;
-  g += `\n- ELIMINATÓRIOS (sem estes NÃO embarca; só aprove se válidos e comprovados por imagem): ${elim.join(', ')||'—'}.`;
-  g += `\n- OBRIGATÓRIOS não-eliminatórios (liste o que faltar como pendência, mas NÃO bloqueie a aprovação por causa deles; o candidato pode fazê-los antes de embarcar — inclui o PMSI, que é treinamento interno online da SBM): ${obrigNaoElim.join(', ')||'—'}.`;
-  g += `\n- CONDICIONAIS (só exija se o candidato for atuar em tarefa que requeira; caso contrário, ignore): ${cond.join(', ')||'—'}.`;
-  g += `\nNa aprovação, em "certificados", liste o status dos eliminatórios e relacione as pendências dos não-eliminatórios. Os eliminatórios só contam como válidos com imagem/PDF verificado pelo veredito técnico.]`;
-  return g;
-}
-
-
-// Instruções da Marina: conversa natural, uma coisa de cada vez
-const SYSTEM_MARINA = `Você é Marina, recrutadora da Hunters Manpower, empresa com mais de 25 anos fornecendo mão de obra marítima e offshore (plataformas de petróleo).
-
-ESTILO DE CONVERSA (muito importante):
-- Converse como uma pessoa de verdade no WhatsApp: mensagens curtas, naturais, informais e educadas.
-- Faça UMA pergunta de cada vez. NUNCA liste várias perguntas na mesma mensagem nem despeje um questionário.
-- Espere a resposta do candidato antes de seguir para o próximo assunto.
-- Puxe o assunto de forma fluida, reagindo ao que a pessoa disse, como num papo natural.
-- Não soe robótica nem formal demais. Nada de listas numeradas de requisitos.
-
-O QUE VOCÊ PRECISA DESCOBRIR AO LONGO DA CONVERSA (sem pressa, um de cada vez):
-1. Confirmar o interesse na vaga.
-2. Experiência da pessoa na área marítima/offshore e função que exerce.
-3. Certificados obrigatórios:
-   - Marítimo — CIR: obrigatório para TODOS os marítimos (oficiais e não-oficiais).
-   - Marítimo — STCW: obrigatório APENAS para OFICIAIS de náutica e de máquinas (CLC, CCB, 1ON, 2ON, OSM, 1OM, 2OM). NÃO peça STCW para as demais funções (MNC, MOC, MAC, CTR, MCB, CDM, ELT, MNM, MOM, MAM, CZA, TAA, ENF e outras). Para esses não-oficiais, cobre somente a CIR.
-   - Offshore: CBSP e THUET (NÃO pergunte sobre HUET nem sobre certificado/atestado médico).
-4. Certificados específicos da função, quando fizer sentido.
-5. Inglês (apenas para oficiais).
-6. Disponibilidade para embarque.
-7. Coleta de documentos: peça currículo e fotos dos certificados.
-8. Encerramento: informe que Rogério, Marcelo ou Anderson entrará em contato para agendar a entrevista.
-
-APROVAÇÃO E ENVIO PARA A EQUIPE (muito importante):
-Um candidato só é APROVADO quando os TRÊS pontos forem confirmados:
-(a) ele QUER a vaga oferecida, (b) está DISPONÍVEL para o trabalho, (c) os certificados obrigatórios da vaga estão VÁLIDOS (conforme o veredito técnico do sistema).
-Antes de aprovar, CONFIRME diretamente com o candidato, em mensagens naturais: pergunte se ele realmente quer a vaga e se está disponível para embarcar/trabalhar. Só prossiga após ele confirmar "sim".
-Quando os três pontos estiverem confirmados, faça o encerramento normal E acrescente, na MESMA mensagem, ao final, uma marca técnica EXATAMENTE neste formato (o candidato não verá esta marca):
-[[APROVADO|nome=NOME DO CANDIDATO|telefone=TELEFONE|funcao=FUNÇÃO|certificados=LISTA DE CERTIFICADOS COM VALIDADE|experiencia=RESUMO DA EXPERIÊNCIA|disponibilidade=QUANDO ESTÁ DISPONÍVEL]]
-Preencha cada campo com o que você apurou na conversa. Use a marca [[APROVADO|...]] UMA ÚNICA VEZ por candidato, somente quando os três pontos estiverem confirmados. Se algum dos três não estiver ok, NÃO use a marca.
-
-GLOSSÁRIO DE FUNÇÕES E SIGLAS (use SOMENTE estes significados; NUNCA invente o que uma sigla significa — se não souber, pergunte ao candidato):
-NÁUTICA/CONVÉS: CLC = Capitão de Longo Curso; CCB = Capitão de Cabotagem; 1ON = Primeiro Oficial de Náutica; 2ON = Segundo Oficial de Náutica; MCB = Mestre de Cabotagem; CTR = Contramestre; MNC = Marinheiro de Convés; MOC = Moço de Convés; MAC = Auxiliar de Convés.
-MÁQUINAS: OSM = Oficial Superior de Máquinas; 1OM = Primeiro Oficial de Máquinas; 2OM = Segundo Oficial de Máquinas; CDM = Condutor de Máquinas; ELT = Eletricista; MNM = Marinheiro de Máquinas; MOM = Moço de Máquinas; MAM = Auxiliar de Máquinas.
-SAÚDE/SERVIÇOS: CZA = Cozinheiro; TAA = Taifeiro; ENF = Enfermeiro.
-OFFSHORE: BCO = Ballast Control Operator (operador de controle de lastro); OGD = Guindasteiro; TST = Técnico de Segurança do Trabalho; HA = Homem de Área; IST = Instrumentista; Tec Mec = Técnico Mecânico; Rigger = Rigger; Sup Carg = Supervisor de Carga; Sup Merg = Supervisor de Mergulho; Mont And = Montador de Andaime; BBD = Bombeador; Sold = Soldador; Cald = Caldeireiro; ROP = Radioperador; Mooring Master = Mooring Master; OPC = Operador de Utilidades/Caldeira.
-TERMOS: FPSO = plataforma flutuante de produção; PLSV = embarcação de lançamento de dutos; ROV = robô submarino; DP = posicionamento dinâmico; DSV = embarcação de apoio a mergulho; SMS = Saúde, Meio Ambiente e Segurança; EPI/EPC = equipamentos de proteção.
-Se o candidato citar uma sigla que não está nesta lista, NÃO adivinhe — pergunte educadamente o que ele faz nessa função.
-
-ANÁLISE DE DOCUMENTOS E VALIDADE DE CERTIFICADOS (regras críticas):
-- A validade de um certificado SÓ pode ser confirmada a partir da IMAGEM ou PDF do documento. NUNCA aceite, registre ou cite data de certificado que o candidato apenas FALOU, ESCREVEU ou DIGITOU no texto/áudio. Se ele disser "meu CBSP é válido até tal data", agradeça e peça a FOTO ou PDF do certificado para confirmar — sem a imagem, o certificado NÃO é considerado verificado.
-- Quando receber a foto/PDF, o sistema verifica a validade e te entrega o VEREDITO numa observação técnica entre colchetes. Você DEVE usar exatamente a data e o status (VÁLIDO/VENCIDO) que aparecem nessa observação. NÃO recalcule, NÃO reescreva e NÃO altere a data por conta própria — copie o que o veredito disser.
-- Se o veredito disser VÁLIDO, confirme de forma natural usando a data do veredito (ex: "Seu CIR está válido até [data do veredito], ótimo!").
-- Se disser VENCIDO, avise com clareza (ex: "Notei que seu THUET venceu em [data do veredito]. Para a vaga ele precisa estar válido. Você consegue renovar?").
-- Se o veredito disser que o documento está ILEGÍVEL ou incompleto, peça educadamente para reenviar a foto com nitidez e o documento inteiro. Não considere nenhuma data até receber uma imagem legível.
-- Se o veredito disser que não foi possível determinar a validade, peça ao candidato a foto da parte do certificado onde aparece a data de emissão/conclusão.
-- Quando receber um CURRÍCULO, leia a experiência, funções e tempo de embarque, e comente de forma natural.
-- NUNCA escreva a aprovação ([[APROVADO|...]]) de um candidato citando um certificado como válido se você não recebeu a imagem/PDF dele e não viu o veredito técnico confirmando. Sem imagem verificada, o certificado conta como NÃO comprovado.
-
-SE A PESSOA NÃO TIVER INTERESSE OU DISPONIBILIDADE:
-Não insista. Use a frase: "Gostaria de abençoar alguém com essa vaga? Pode enviar meu contato ou me enviar o contato que eu mesmo ligo."
-
-VALORES DA HUNTERS: disponibilidade, educação, bom comportamento, inglês, experiência e caráter. Falta de cortesia é eliminatória.
-
-MATRIZ DE TREINAMENTOS SBM (para vagas OFFSHORE da SBM Offshore):
-Quando a vaga for offshore para o cliente SBM e você identificar a função do candidato, o sistema te entregará, numa observação técnica entre colchetes começando com [MATRIZ SBM...], a lista de certificados ELIMINATÓRIOS, OBRIGATÓRIOS não-eliminatórios e CONDICIONAIS daquela função. Siga essa observação à risca:
-- ELIMINATÓRIOS (CBSP e THUET): sem eles, válidos e comprovados por imagem/PDF, o candidato NÃO pode ser aprovado. Trate como a regra dos três pontos.
-- OBRIGATÓRIOS não-eliminatórios (ex: NR-35, NR-33, NR-10, PMSI e outros): se faltarem, NÃO bloqueie a aprovação. Aprove e LISTE essas pendências no campo de certificados, de forma que a equipe saiba o que o candidato ainda precisa providenciar antes de embarcar. O PMSI é treinamento interno da SBM, feito online no ambiente deles antes do embarque — registre como pendência, nunca como impeditivo.
-- CONDICIONAIS: só pergunte/exija se o candidato for atuar em tarefa que requeira aquele curso; caso contrário, ignore.
-Se a observação [MATRIZ SBM...] não aparecer (ex: vaga puramente marítima, não-SBM), siga as regras de certificado marítimo já descritas (CIR para todos, STCW só para oficiais).
-
-Responda sempre em português, de forma cordial e profissional.`;
-
-app.post('/webhook', async(req,res)=>{
-  res.sendStatus(200);
-  try{
-    const body = req.body;
-    if(body.event !== 'messages.upsert') return;
-    const msg = body.data?.messages?.[0] || body.data;
-    if(!msg || msg.key?.fromMe) return;
-    const remoteJid = msg.key?.remoteJid || '';
-    // Ignora mensagens de GRUPO: a Marina não responde nada em grupos, só posta aprovados.
-    if(remoteJid.includes('@g.us')) return;
-    const telefone = remoteJid.replace('@s.whatsapp.net','');
-    if(!telefone) return;
-    const messageId = msg.key?.id;
-
-    let texto = msg.message?.conversation
-      || msg.message?.extendedTextMessage?.text
-      || '';
-
-    let midia = null;
-
-    const imagem = msg.message?.imageMessage;
-    const documento = msg.message?.documentMessage
-      || msg.message?.documentWithCaptionMessage?.message?.documentMessage;
-    const audio = msg.message?.audioMessage;
-
-    if(imagem){
-      console.log(`Imagem recebida de ${telefone}, baixando...`);
-      const base64 = await baixarMidia(messageId);
-      if(base64){
-        midia = { tipo:'image', media_type: imagem.mimetype || 'image/jpeg', dados: base64 };
-        if(!texto) texto = imagem.caption || 'Segue o documento em imagem.';
-      } else {
-        texto = 'Recebi sua imagem mas não consegui abrir. Pode reenviar, por favor?';
-      }
-    } else if(documento){
-      const mime = documento.mimetype || '';
-      console.log(`Documento recebido de ${telefone} (${mime}), baixando...`);
-      const base64 = await baixarMidia(messageId);
-      if(base64 && mime.includes('pdf')){
-        midia = { tipo:'document', media_type:'application/pdf', dados: base64 };
-        if(!texto) texto = 'Segue meu certificado em PDF.';
-      } else if(base64){
-        texto = 'Recebi seu arquivo. Se for o currículo, pode me mandar em PDF ou foto? Assim consigo analisar melhor.';
-      } else {
-        texto = 'Recebi seu arquivo mas não consegui abrir. Pode reenviar, por favor?';
-      }
-    } else if(audio && !texto){
-      console.log(`Áudio recebido de ${telefone}, transcrevendo...`);
-      texto = await transcreverAudio(messageId);
-    }
-
-    if(!texto && !midia) return;
-    console.log(`Mensagem de ${telefone}: ${texto}${midia?' [+ '+midia.tipo+']':''}`);
-
-    // Se houver mídia visual (imagem/PDF), verifica se é certificado e calcula validade
-    let veredito = '';
-    if(midia){
-      veredito = await verificarCertificado(midia);
-      if(veredito) console.log(`Veredito: ${veredito}`);
-    }
-
-    if(!conversas[telefone]) conversas[telefone]=[];
-    // Tenta reconhecer a função (na mensagem atual ou no histórico) e anexa o guia da matriz SBM
-    let dicaMatriz = guiaMatriz(texto);
-    if(!dicaMatriz){
-      const ctx = conversas[telefone].map(x=>typeof x.content==='string'?x.content:'').join(' ');
-      dicaMatriz = guiaMatriz(ctx);
-    }
-    const veredictoComMatriz = (veredito||'') + (dicaMatriz||'');
-    let resposta = await processarIA(texto, conversas[telefone], midia, veredictoComMatriz);
-
-    // Detecta marca de aprovação [[APROVADO|...]] e envia resumo ao grupo da equipe
-    const marca = resposta.match(/\[\[APROVADO\|([\s\S]*?)\]\]/);
-    if(marca){
-      try{ await enviarAprovadoParaGrupo(marca[1], telefone); }
-      catch(e){ console.error('Erro ao enviar aprovado ao grupo:', e); }
-      // Remove a marca para o candidato não ver
-      resposta = resposta.replace(/\[\[APROVADO\|[\s\S]*?\]\]/g,'').trim();
-    }
-
-    conversas[telefone].push({role:'user',content: texto + (midia?` [enviou um documento]`:'')});
-    conversas[telefone].push({role:'assistant',content:resposta});
-    if(conversas[telefone].length>20) conversas[telefone]=conversas[telefone].slice(-20);
-    await enviarWA(telefone, resposta);
-  }catch(e){console.error('Erro webhook:',e);}
-});
-
-// Endpoint do app embutido (chat Claude) - mantido igual
-app.post('/claude', async(req,res)=>{
-  try{
-    const {messages, system, max_tokens} = req.body;
-    const response = await fetch('https://api.anthropic.com/v1/messages',{
-      method:'POST',
-      headers:{
-        'Content-Type':'application/json',
-        'x-api-key': process.env.ANTHROPIC_API_KEY,
-        'anthropic-version':'2023-06-01'
-      },
-      body: JSON.stringify({
-        model:'claude-sonnet-4-5',
-        max_tokens: max_tokens||600,
-        system: system||'',
-        messages
-      })
-    });
-    const data = await response.json();
-    res.json(data);
-  }catch(e){
-    res.status(500).json({error:e.message});
-  }
-});
-
-// Endpoint de login do app: confere a senha guardada no Render (APP_SENHA)
-app.post('/login', (req,res)=>{
-  try{
-    const { senha } = req.body;
-    if(!process.env.APP_SENHA){
-      return res.status(500).json({ok:false, erro:'Senha do app não configurada no servidor.'});
-    }
-    if(senha && senha === process.env.APP_SENHA){
-      return res.json({ok:true});
-    }
-    return res.status(401).json({ok:false});
-  }catch(e){
-    res.status(500).json({ok:false, erro:e.message});
-  }
-});
-function blocoMidia(midia){
-  return midia.tipo === 'image'
-    ? { type:'image', source:{ type:'base64', media_type: midia.media_type, data: midia.dados } }
-    : { type:'document', source:{ type:'base64', media_type:'application/pdf', data: midia.dados } };
-}
-
-// ETAPA 1: IA extrai datas do certificado (JSON). ETAPA 2: código calcula validade.
-async function verificarCertificado(midia){
-  try{
-    const instrucao = `Analise este documento. Se NÃO for um certificado (ex: currículo, foto pessoal, outro), responda apenas: {"certificado":false}.
-Se for um certificado, responda APENAS com um JSON, sem texto ao redor, neste formato:
-{"certificado":true,"nome":"NOME DO CERTIFICADO (ex: CBSP, THUET, CIR, STCW ou outro)","data_validade":"DD/MM/AAAA da VALIDADE/VENCIMENTO impressa, ou null","data_conclusao":"DD/MM/AAAA da EMISSÃO/CONCLUSÃO/REALIZAÇÃO, ou null","legivel":true}
-IMPORTANTE: NÃO confunda data de emissão/conclusão com data de validade. A data de emissão/conclusão é quando o curso foi feito ou o documento foi emitido; a validade é quando ele expira. Documentos da Marinha do Brasil (CIR, CBGRN) trazem os dois campos rotulados: "Data de Emissão" e "Data de Validade" — leia cada um com atenção e coloque no campo correto. Se houver apenas UMA data e ela for claramente de emissão/realização, coloque em data_conclusao e deixe data_validade como null. Use null (sem aspas) quando a data não existir. Leia os dias, meses e anos exatamente como impressos; nunca invente nem estime datas. Se o documento estiver ilegível, borrado, cortado ou incompleto, responda {"certificado":true,"legivel":false}.`;
-
-    const r = await fetch('https://api.anthropic.com/v1/messages',{
-      method:'POST',
-      headers:{'Content-Type':'application/json','x-api-key':process.env.ANTHROPIC_API_KEY,'anthropic-version':'2023-06-01'},
-      body: JSON.stringify({
-        model:'claude-sonnet-4-5',
-        max_tokens:300,
-        system:'Você extrai dados de documentos e responde somente em JSON puro, sem markdown, sem explicação.',
-        messages:[{role:'user', content:[ blocoMidia(midia), {type:'text', text:instrucao} ]}]
-      })
-    });
-    const d = await r.json();
-    let txt = (d.content?.[0]?.text || '').replace(/```json|```/g,'').trim();
-    let dados;
-    try{ dados = JSON.parse(txt); }catch(e){ console.error('JSON inválido do extrator:', txt); return ''; }
-
-    if(!dados.certificado) return ''; // não é certificado, segue conversa normal
-
-    if(dados.legivel === false){
-      return `[OBSERVAÇÃO TÉCNICA: o documento parece ser um certificado, mas está ILEGÍVEL ou incompleto. Peça ao candidato, de forma educada, para reenviar a foto com boa nitidez e o documento inteiro. NÃO considere nenhuma data até receber uma imagem legível.]`;
-    }
-
-    const nome = (dados.nome||'').toUpperCase();
-    // Determina a data de vencimento
-    let vencimento = null;
-    let origemCalculo = '';
-    const ehCincoAnos = VALIDADE_5_ANOS.some(c=>nome.includes(c));
-
-    // Regra geral: SEMPRE usar a data de validade impressa quando ela existir.
-    vencimento = parseData(dados.data_validade);
-
-    if(!vencimento){
-      // Não há validade impressa.
-      if(ehCincoAnos){
-        // CIR / STCW / CBSP / THUET: se só houver a data de emissão/conclusão,
-        // a validade é emissão/conclusão + 5 anos.
-        const base = parseData(dados.data_conclusao);
-        if(base){
-          vencimento = new Date(base);
-          vencimento.setFullYear(vencimento.getFullYear()+5);
-          origemCalculo = ` (sem validade impressa; calculado: emissão/conclusão ${dados.data_conclusao} + 5 anos)`;
-        }
-      } else {
-        // Demais certificados: na falta de validade, usa a data de conclusão como referência.
-        vencimento = parseData(dados.data_conclusao);
-      }
-    }
-
-    if(!vencimento){
-      return `[OBSERVAÇÃO TÉCNICA: documento identificado como certificado ${nome||''}, mas não foi possível determinar a validade. Peça ao candidato para confirmar a data de validade ou de conclusão.]`;
-    }
-
-    const hoje = new Date(); hoje.setHours(0,0,0,0);
-    const venc = new Date(vencimento); venc.setHours(0,0,0,0);
-    const vencStr = venc.toLocaleDateString('pt-BR');
-    const status = venc < hoje ? 'VENCIDO' : 'VÁLIDO';
-    return `[OBSERVAÇÃO TÉCNICA (não mostre os colchetes ao candidato): certificado ${nome||''} está ${status}. Vencimento: ${vencStr}${origemCalculo}.]`;
-  }catch(e){ console.error('Erro verificar certificado:',e); return ''; }
-}
-
-// Converte "DD/MM/AAAA" (ou variações) em Date. Retorna null se não der.
-function parseData(s){
-  if(!s || s==='null') return null;
-  const m = String(s).match(/(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})/);
-  if(m){
-    let [_,d,mes,a] = m;
-    if(a.length===2) a = '20'+a;
-    const dt = new Date(Number(a), Number(mes)-1, Number(d));
-    return isNaN(dt) ? null : dt;
-  }
-  // só mês/ano (MM/AAAA)
-  const m2 = String(s).match(/(\d{1,2})[\/\-.](\d{4})/);
-  if(m2){ const dt = new Date(Number(m2[2]), Number(m2[1])-1, 1); return isNaN(dt)?null:dt; }
-  return null;
-}
-
-async function processarIA(texto, historico, midia, veredito){
-  try{
-    let conteudoUser;
-    const textoFinal = veredito ? `${texto}\n${veredito}` : texto;
-    if(midia){
-      conteudoUser = [ blocoMidia(midia), { type:'text', text: textoFinal } ];
-    } else {
-      conteudoUser = textoFinal;
-    }
-    const msgs = [...historico, {role:'user', content: conteudoUser}];
-    const hoje = new Date().toLocaleDateString('pt-BR',{timeZone:'America/Sao_Paulo',day:'2-digit',month:'long',year:'numeric'});
-    const systemComData = `DATA DE HOJE: ${hoje}.\n\n` + SYSTEM_MARINA;
-    const r = await fetch('https://api.anthropic.com/v1/messages',{
-      method:'POST',
-      headers:{'Content-Type':'application/json','x-api-key':process.env.ANTHROPIC_API_KEY,'anthropic-version':'2023-06-01'},
-      body: JSON.stringify({
-        model:'claude-sonnet-4-5',
-        max_tokens:500,
-        system: systemComData,
-        messages: msgs
-      })
-    });
-    const d = await r.json();
-    return d.content?.[0]?.text || 'Olá! Tudo bem?';
-  }catch(e){console.error('Erro IA:',e); return 'Olá! Tudo bem? Sou da Hunters Manpower.';}
-}
-
-async function baixarMidia(messageId){
-  try{
-    const rb = await fetch(`${process.env.EVO_URL}/chat/getBase64FromMediaMessage/${process.env.EVO_INSTANCE}`,{
-      method:'POST',
-      headers:{'Content-Type':'application/json','apikey':process.env.EVO_KEY},
-      body: JSON.stringify({ message:{ key:{ id: messageId } }, convertToMp4:false })
-    });
-    const db = await rb.json();
-    const base64 = db?.base64 || db?.media || db?.buffer;
-    if(!base64) console.error('Sem base64 da mídia:', JSON.stringify(db).slice(0,300));
-    return base64 || null;
-  }catch(e){ console.error('Erro baixar mídia:',e); return null; }
-}
-
-async function transcreverAudio(messageId){
-  try{
-    if(!process.env.OPENAI_API_KEY){
-      return 'Recebi seu áudio, mas no momento consigo ler apenas mensagens de texto. Pode me escrever, por favor?';
-    }
-    const base64 = await baixarMidia(messageId);
-    if(!base64) return 'Recebi seu áudio, mas não consegui abrir. Pode me escrever, por favor?';
-    const audioBuffer = Buffer.from(base64,'base64');
-    const form = new FormData();
-    form.append('file', new Blob([audioBuffer],{type:'audio/ogg'}), 'audio.ogg');
-    form.append('model','whisper-1');
-    form.append('language','pt');
-    const rt = await fetch('https://api.openai.com/v1/audio/transcriptions',{
-      method:'POST',
-      headers:{'Authorization':`Bearer ${process.env.OPENAI_API_KEY}`},
-      body: form
-    });
-    const dt = await rt.json();
-    const transcrito = dt?.text || '';
-    console.log(`Transcrição: ${transcrito}`);
-    return transcrito || 'Recebi seu áudio mas não entendi. Pode repetir por escrito?';
-  }catch(e){
-    console.error('Erro transcrição:',e);
-    return 'Recebi seu áudio, mas tive um problema para ouvir. Pode me escrever, por favor?';
-  }
-}
-
-async function enviarWA(telefone, mensagem){
-  try{
-    await fetch(`${process.env.EVO_URL}/message/sendText/${process.env.EVO_INSTANCE}`,{
-      method:'POST',
-      headers:{'Content-Type':'application/json','apikey':process.env.EVO_KEY},
-      body:JSON.stringify({number:telefone,text:mensagem})
-    });
-  }catch(e){console.error('Erro WA:',e);}
-}
-
-// Monta o resumo do candidato aprovado e envia ao grupo da equipe de operações
-async function enviarAprovadoParaGrupo(dadosBrutos, telefoneCandidato){
-  if(!process.env.GRUPO_ID){
-    console.error('GRUPO_ID não configurado — resumo não enviado ao grupo.');
-    return;
-  }
-  // Trava de duplicata: se já enviamos este candidato, não envia de novo
-  if(telefoneCandidato && aprovadosEnviados[telefoneCandidato]){
-    console.log('Candidato já enviado ao grupo, ignorando duplicata:', telefoneCandidato);
-    return;
-  }
-  if(telefoneCandidato) aprovadosEnviados[telefoneCandidato] = true;
-
-  // dadosBrutos: "nome=...|telefone=...|funcao=...|certificados=...|experiencia=...|disponibilidade=..."
-  const campos = {};
-  dadosBrutos.split('|').forEach(p=>{
-    const i = p.indexOf('=');
-    if(i>0){ campos[p.slice(0,i).trim().toLowerCase()] = p.slice(i+1).trim(); }
-  });
-
-  // SEMPRE usa o telefone real da conversa (ignora o que a IA escreveu)
-  const telefone = telefoneCandidato || campos.telefone || '—';
-  const resumo =
-`🚢 *NOVO CANDIDATO APROVADO*
-
-Nome: ${campos.nome||'—'}
-Telefone: ${telefone}
-Função: ${campos.funcao||'—'}
-Certificados: ${campos.certificados||'—'}
-Experiência: ${campos.experiencia||'—'}
-Disponibilidade: ${campos.disponibilidade||'—'}`;
-  try{
-    await fetch(`${process.env.EVO_URL}/message/sendText/${process.env.EVO_INSTANCE}`,{
-      method:'POST',
-      headers:{'Content-Type':'application/json','apikey':process.env.EVO_KEY},
-      body:JSON.stringify({number:process.env.GRUPO_ID,text:resumo})
-    });
-    console.log(`Candidato aprovado enviado ao grupo: ${campos.nome||telefone}`);
-  }catch(e){console.error('Erro ao enviar resumo ao grupo:',e);}
-}
-
-app.get('/', (req,res)=>{
-  res.json({status:'Hunters Manpower Webhook ativo!',versao:'3.2'});
-});
-
-const PORT = process.env.PORT||3001;
-app.listen(PORT,()=>console.log(`Webhook rodando na porta ${PORT}`));
