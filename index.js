@@ -15,10 +15,10 @@ const aprovadosEnviados = {}; // trava: evita enviar o mesmo candidato 2x ao gru
 // Certificados com validade de 5 anos
 const VALIDADE_5_ANOS = ['CBSP','THUET','CIR','STCW'];
 
-// ===== MATRIZ DE TREINAMENTOS SBM OFFSHORE (planilha definitiva 05/06 + regras Hunters) =====
+// ===== MATRIZ DE TREINAMENTOS SBM OFFSHORE (planilha definitiva + regras Hunters) =====
 // A matriz SBM define O QUE cada função exige (X/C). O NÍVEL define COMO a Marina comunica.
-const ELIM_SEMPRE = ["CBSP","THUET"];          // eliminatório sempre
-const ELIM_SOLICITADO = ["CAEBS","GMDSS","BCO"]; // eliminatório quando a matriz pede p/ a função
+const ELIM_SEMPRE = ["CBSP","THUET","CAEBS"];   // eliminatório SEMPRE na SBM (base de TODAS as funções)
+const ELIM_SOLICITADO = ["GMDSS","BCO"];        // eliminatório quando a matriz pede p/ a função
 
 // Nível global de cada certificado (cruzado com a matriz por função)
 const CERT_NIVEL = {
@@ -51,7 +51,7 @@ const CERT_NIVEL = {
   "ATLS": "PADRAO",
   "THUET": "ELIM_SEMPRE",
   "CRANE_L3": "PADRAO",
-  "CAEBS": "ELIM_SOLICITADO",
+  "CAEBS": "ELIM_SEMPRE",
   "PMSI": "PADRAO",
 };
 
@@ -85,16 +85,25 @@ const CERT_NOMES = {
   "ATLS": "ATLS - Suporte Avançado de Vida no Trauma",
   "THUET": "THUET (escape de helicóptero) - OPITO",
   "CRANE_L3": "Operações de Guindaste Offshore Nível 3",
-  "CAEBS": "CA-EBS - OPITO (para ESS)",
+  "CAEBS": "CA-EBS - Compressed Air Emergency Breathing System (OPITO)",
   "PMSI": "Vendor PMSI (treinamento interno SBM, online)",
 };
 
-// Documentos marítimos extras exigidos por função específica (somam aos offshore)
+// CIR + STCW por função, com a CADEIA (convés/máquinas) e o nível exato.
+// Regra de hierarquia: aprovar quem tem nível IGUAL OU SUPERIOR ao exigido, na MESMA cadeia.
 const MARITIMO_FUNCAO = {
-  "Supervisor de Carga": ["CIR", "STCW II/2"],
-  "Mestre de Cabotagem (Contramestre)": ["CIR"],
-  "Marinheiro de Convés": ["CIR"],
-  "Operador de Carga": ["CIR (de MNC ou MOC)"],
+  "Supervisor de Carga": ["CIR (1º Of. Náutica ou superior)", "STCW II/2 (cadeia Convés)"],
+  "Operador de Carga": ["CIR de CDM", "STCW III/4 (cadeia Máquinas)"],
+  "Mestre de Cabotagem (Contramestre)": ["CIR de MCB ou CTR", "STCW A-II/4 (cadeia Convés)"],
+  "Marinheiro de Convés": ["CIR de MNC", "STCW A-II/5 (cadeia Convés)"],
+  "2º Oficial de Máquinas / Operador de Manutenção": ["CIR (2º Of. Máquinas ou superior)", "STCW III/1 (cadeia Máquinas)"],
+};
+
+// Hierarquia STCW (fonte SINDMAR). Aprovar se nível do candidato >= exigido, na MESMA cadeia.
+// Convés e Máquinas são cadeias SEPARADAS — III não substitui II.
+const STCW_RANK = {
+  CONVES:   { "A-II/5":1, "A-II/4":2, "II/1":3, "II/2":4 },
+  MAQUINAS: { "III/7":1, "A-III/4":2, "III/4":2, "III/1":3, "III/2":4 }
 };
 
 const MATRIZ_TREINAMENTOS = {
@@ -127,8 +136,8 @@ function mapearFuncaoSBM(textoFuncao){
     [["mestre de cabotagem","contramestre","gp foreman","mcb"], "Mestre de Cabotagem (Contramestre)"],
     [["marinheiro de conv","gp operator ab","mnc","convés","conves"], "Marinheiro de Convés"],
     [["homem de área","homem de area"," ha","gp operator"], "Homem de Área"],
-    [["supervisor de carga","cargo sup","sup carg"], "Supervisor de Carga"],
-    [["operador de carga","cargo operator","bombeador","bbd","bco"], "Operador de Carga"],
+    [["supervisor de carga","cargo sup","sup carg","bco","ballast","controle de lastro"], "Supervisor de Carga"],
+    [["operador de carga","cargo operator","bombeador","pumpman","bbd"], "Operador de Carga"],
     [["instrument","ist"], "Técnico de Instrumentação"],
     [["elétric","eletric","elt"], "Técnico de Elétrica"],
     [["mecân","mecan","tec mec"], "Técnico de Mecânica"],
@@ -173,7 +182,7 @@ function guiaMatriz(textoFuncao){
   if(elimSolic.length)
     g += `\n- ELIMINATÓRIOS quando exigidos para esta função (mesmo peso dos acima; sem eles não aprove): ${elimSolic.join(', ')}.`;
   if(maritimo.length)
-    g += `\n- DOCUMENTOS MARÍTIMOS obrigatórios para esta função (cobre por imagem como os eliminatórios): ${maritimo.join(', ')}.`;
+    g += `\n- DOCUMENTOS MARÍTIMOS obrigatórios para esta função (cobre por imagem como os eliminatórios; aprove quem tem STCW de nível IGUAL OU SUPERIOR ao exigido, na MESMA cadeia — convés ou máquinas, que são separadas): ${maritimo.join(', ')}.`;
   if(criticos.length)
     g += `\n- CRÍTICOS (a Hunters NÃO fornece; avise o candidato com URGÊNCIA que precisa providenciar por conta, são cursos longos e indispensáveis para embarcar; NÃO barram a triagem mas registre como pendência crítica): ${criticos.join(', ')}.`;
   if(leves.length)
@@ -223,6 +232,7 @@ NÁUTICA/CONVÉS: CLC = Capitão de Longo Curso; CCB = Capitão de Cabotagem; 1O
 MÁQUINAS: OSM = Oficial Superior de Máquinas; 1OM = Primeiro Oficial de Máquinas; 2OM = Segundo Oficial de Máquinas; CDM = Condutor de Máquinas; ELT = Eletricista; MNM = Marinheiro de Máquinas; MOM = Moço de Máquinas; MAM = Auxiliar de Máquinas.
 SAÚDE/SERVIÇOS: CZA = Cozinheiro; TAA = Taifeiro; ENF = Enfermeiro.
 OFFSHORE: BCO = Ballast Control Operator (operador de controle de lastro); OGD = Guindasteiro; TST = Técnico de Segurança do Trabalho; HA = Homem de Área; IST = Instrumentista; Tec Mec = Técnico Mecânico; Rigger = Rigger; Sup Carg = Supervisor de Carga; Sup Merg = Supervisor de Mergulho; Mont And = Montador de Andaime; BBD = Bombeador; Sold = Soldador; Cald = Caldeireiro; ROP = Radioperador; Mooring Master = Mooring Master; OPC = Operador de Utilidades/Caldeira.
+IMPORTANTE sobre BCO na SBM: quando a vaga offshore SBM for de "BCO", a função real é o Supervisor de Carga (JD10), que detém a Certificação de Operador de Lastro. Trate "BCO" como Supervisor de Carga. Já "Bombeador/Pumpman" corresponde ao Operador de Carga (JD31).
 TERMOS: FPSO = plataforma flutuante de produção; PLSV = embarcação de lançamento de dutos; ROV = robô submarino; DP = posicionamento dinâmico; DSV = embarcação de apoio a mergulho; SMS = Saúde, Meio Ambiente e Segurança; EPI/EPC = equipamentos de proteção.
 Se o candidato citar uma sigla que não está nesta lista, NÃO adivinhe — pergunte educadamente o que ele faz nessa função.
 
@@ -243,8 +253,8 @@ VALORES DA HUNTERS: disponibilidade, educação, bom comportamento, inglês, exp
 
 MATRIZ DE TREINAMENTOS SBM (para vagas OFFSHORE da SBM Offshore):
 Quando a vaga for offshore SBM e você identificar a função, o sistema te entrega uma observação [MATRIZ SBM...] classificando os certificados daquela função por NÍVEL. Siga à risca:
-- ELIMINATÓRIOS (CBSP, THUET — e, quando a função exigir, CA-EBS, GMDSS, BCO): sem eles, válidos e comprovados por imagem/PDF, o candidato NÃO pode ser aprovado.
-- DOCUMENTOS MARÍTIMOS por função (ex: Supervisor de Carga precisa de CIR e STCW II/2; Mestre de Cabotagem, Marinheiro de Convés e Operador de Carga precisam de CIR): cobre por imagem e trate como obrigatório dessa função.
+- ELIMINATÓRIOS (CBSP, THUET e CA-EBS — base obrigatória de TODAS as funções SBM; e, quando a função exigir, GMDSS e a Certificação BCO): sem eles, válidos e comprovados por imagem/PDF, o candidato NÃO pode ser aprovado. O CA-EBS é eliminatório SEMPRE na SBM — NUNCA diga que é "só para ESS" nem que é opcional.
+- DOCUMENTOS MARÍTIMOS por função (CIR e STCW vêm na observação [MATRIZ SBM...] já com a cadeia e o nível certos). Use SEMPRE o que a observação trouxer; nunca invente. Exemplos do que é correto: Supervisor de Carga (= função "BCO" na SBM, que detém a Certificação de Operador de Lastro) precisa de CIR de 1º Oficial de Náutica ou superior + STCW II/2 (convés); Operador de Carga (= Bombeador/Pumpman) precisa de CIR de CDM + STCW III/4 (máquinas); Mestre de Cabotagem precisa de CIR de MCB ou CTR; Marinheiro de Convés, CIR de MNC. REGRA STCW: aprove quem tem nível IGUAL OU SUPERIOR ao exigido na MESMA cadeia (convés e máquinas são cadeias separadas; III não substitui II) — NUNCA elimine alguém por apresentar um STCW de nível superior ao exigido.
 - CRÍTICOS (a Hunters NÃO fornece — ex: NR-10, NR-37 Básico/Avançado, NR-13 A/B, Inspeção de Andaime, Teste de Estanqueidade, Combate a Incêndio Avançado, Carga Avançado em Petroleiros): NÃO bloqueiam a triagem, mas avise o candidato com URGÊNCIA que ele precisa providenciar por conta, pois são cursos longos e indispensáveis para embarcar.
 - A HUNTERS FORNECE (ex: NR-33, NR-35): pode tranquilizar o candidato dizendo que a empresa oferece esses cursos. Não bloqueiam.
 - OBRIGATÓRIOS comuns e PMSI: liste como pendência a providenciar antes do embarque. O PMSI é treinamento interno online da SBM. Não bloqueiam.
@@ -590,7 +600,7 @@ Disponibilidade: ${campos.disponibilidade||'—'}`;
 }
 
 app.get('/', (req,res)=>{
-  res.json({status:'Hunters Manpower Webhook ativo!',versao:'3.3'});
+  res.json({status:'Hunters Manpower Webhook ativo!',versao:'3.4'});
 });
 
 const PORT = process.env.PORT||3001;
