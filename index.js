@@ -247,7 +247,8 @@ ANÁLISE DE DOCUMENTOS E VALIDADE DE CERTIFICADOS (regras críticas):
 - NUNCA escreva a aprovação ([[APROVADO|...]]) de um candidato citando um certificado como válido se você não recebeu a imagem/PDF dele e não viu o veredito técnico confirmando. Sem imagem verificada, o certificado conta como NÃO comprovado.
 
 SE A PESSOA NÃO TIVER INTERESSE OU DISPONIBILIDADE:
-Não insista. Use a frase: "Gostaria de abençoar alguém com essa vaga? Pode enviar meu contato ou me enviar o contato que eu mesmo ligo."
+Não insista. Use a frase: "Gostaria de abençoar alguém com essa vaga? Pode enviar meu contato [NUMERO_MARINA] ou me enviar o contato que eu mesmo ligo."
+IMPORTANTE: NUNCA escreva, invente ou adivinhe um número de telefone seu ou da Hunters. Sempre que precisar passar seu contato, escreva LITERALMENTE o marcador [NUMERO_MARINA] — o sistema substitui pelo número real automaticamente. Se em qualquer outro momento o candidato pedir seu número/contato, responda com o marcador [NUMERO_MARINA], nunca com dígitos inventados.
 
 VALORES DA HUNTERS: disponibilidade, educação, bom comportamento, inglês, experiência e caráter. Falta de cortesia é eliminatória.
 
@@ -343,6 +344,9 @@ app.post('/webhook', async(req,res)=>{
       // Remove a marca para o candidato não ver
       resposta = resposta.replace(/\[\[APROVADO\|[\s\S]*?\]\]/g,'').trim();
     }
+
+    // Substitui o marcador [NUMERO_MARINA] pelo número real do chip da Hunters (variável do Render)
+    resposta = aplicarNumeroMarina(resposta);
 
     conversas[telefone].push({role:'user',content: texto + (midia?` [enviou um documento]`:'')});
     conversas[telefone].push({role:'assistant',content:resposta});
@@ -480,6 +484,28 @@ function parseData(s){
   return null;
 }
 
+
+// Formata o número da Marina (do Render) para exibição amigável ao candidato.
+function numeroMarinaFormatado(){
+  const raw = (process.env.NUMERO_MARINA||'').replace(/\D/g,'');
+  if(!raw) return '';
+  // tenta formatar BR: 55 DDD 9XXXXXXXX -> (DDD) 9XXXX-XXXX
+  let n = raw;
+  if(n.startsWith('55') && n.length>=12) n = n.slice(2);
+  if(n.length===11) return `(${n.slice(0,2)}) ${n.slice(2,7)}-${n.slice(7)}`;
+  if(n.length===10) return `(${n.slice(0,2)}) ${n.slice(2,6)}-${n.slice(6)}`;
+  return process.env.NUMERO_MARINA;
+}
+
+// Substitui o marcador [NUMERO_MARINA] pelo número real (ou remove o parêntese se não houver número).
+function aplicarNumeroMarina(texto){
+  if(!texto) return texto;
+  const num = numeroMarinaFormatado();
+  if(num) return texto.replace(/\[NUMERO_MARINA\]/g, num);
+  // sem número configurado: remove o marcador e um eventual "(" ")" ao redor para não ficar feio
+  return texto.replace(/\s*\(\s*\[NUMERO_MARINA\]\s*\)/g,'').replace(/\[NUMERO_MARINA\]/g,'').trim();
+}
+
 async function processarIA(texto, historico, midia, veredito){
   try{
     let conteudoUser;
@@ -600,7 +626,7 @@ Disponibilidade: ${campos.disponibilidade||'—'}`;
 }
 
 app.get('/', (req,res)=>{
-  res.json({status:'Hunters Manpower Webhook ativo!',versao:'3.4'});
+  res.json({status:'Hunters Manpower Webhook ativo!',versao:'3.5'});
 });
 
 const PORT = process.env.PORT||3001;
