@@ -697,7 +697,7 @@ Disponibilidade: ${campos.disponibilidade||'—'}`;
 }
 
 app.get('/', (req,res)=>{
-  res.json({status:'Hunters Manpower Webhook ativo!',versao:'3.6'});
+  res.json({status:'Hunters Manpower Webhook ativo!',versao:'3.7'});
 });
 
 const PORT = process.env.PORT||3001;
