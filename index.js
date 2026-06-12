@@ -10,10 +10,69 @@ app.use((req,res,next)=>{
 });
 
 const conversas = {};
-const aprovadosEnviados = {}; // trava: evita enviar o mesmo candidato 2x ao grupo
+const aprovadosEnviados = {};
 
-// Certificados com validade de 5 anos
-const VALIDADE_5_ANOS = ['CBSP','THUET','CIR','STCW'];
+// ===== TABELA DE VALIDADES POR CERTIFICADO =====
+// Fonte: textos oficiais das NRs (MTE/gov.br) e normas marítimas (DPC/Marinha)
+// anos: número de anos a somar à data de emissão/conclusão
+// dias: número de dias (usado para CBSP declaração provisória)
+// sem_prazo: true quando a NR não define prazo fixo (reciclagem por evento)
+const VALIDADE_CERT = {
+  // Marítimos / Offshore
+  'CBSP_HOMOLOGADO': { anos: 5,  desc: 'CBSP homologado (emissão + 5 anos)' },
+  'CBSP':            { dias: 90, desc: 'Declaração provisória CBSP (emissão + 90 dias)' },
+  'THUET':           { anos: 4,  desc: 'THUET OPITO (usar data impressa)' },
+  'HUET':            { anos: 4,  desc: 'HUET (usar data impressa)' },
+  'CIR':             { anos: 5,  desc: 'CIR (usar data de validade impressa)' },
+  'STCW':            { anos: 5,  desc: 'STCW (usar data impressa ou emissão + 5 anos)' },
+  'CAEBS':           { anos: 4,  desc: 'CA-EBS OPITO (usar data impressa)' },
+  'GMDSS':           { anos: 5,  desc: 'GMDSS (usar data impressa)' },
+  // NRs com prazo fixo definido na norma
+  'NR-05': { anos: 1, desc: 'NR-05 CIPA (item 5.32 NR-05) — anual' },
+  'NR-10': { anos: 2, desc: 'NR-10 Eletricidade (item 10.8.8.2) — bienal' },
+  'NR-20': { anos: 2, desc: 'NR-20 Inflamáveis (NR-20) — bienal' },
+  'NR-23': { anos: 1, desc: 'NR-23 Brigada/Combate a Incêndio — anual' },
+  'NR-33': { anos: 1, desc: 'NR-33 Espaços Confinados (item 33.3.5.2) — anual' },
+  'NR-34-ESTANQUEIDADE': { anos: 1, desc: 'NR-34 Teste de Estanqueidade (item 34.14.2.2) — anual' },
+  'NR-35': { anos: 2, desc: 'NR-35 Trabalho em Altura (item 35.3.3) — bienal' },
+  'NR-36': { anos: 1, desc: 'NR-36 Abate/Carnes (item 36.16.4.1) — anual' },
+  'NR-37': { anos: 5, desc: 'NR-37 Plataformas Offshore (item 37.8.10.3) — 5 anos' },
+  // NRs SEM prazo fixo legal (reciclagem por evento/empresa)
+  'NR-06': { sem_prazo: true, desc: 'NR-06 EPI — sem prazo fixo legal' },
+  'NR-11': { sem_prazo: true, desc: 'NR-11 Movimentação de Cargas — sem prazo fixo (cartão operador: 1 ano)' },
+  'NR-12': { sem_prazo: true, desc: 'NR-12 Máquinas e Equipamentos — sem prazo fixo legal' },
+  'NR-13': { sem_prazo: true, desc: 'NR-13 Caldeiras/Vasos de Pressão — sem prazo fixo legal' },
+  'NR-18': { sem_prazo: true, desc: 'NR-18 Construção Civil — sem prazo fixo legal' },
+  'NR-34': { sem_prazo: true, desc: 'NR-34 Construção Naval (geral) — sem prazo fixo legal' },
+};
+
+// Detecta o tipo de certificado pelo nome extraído do documento e retorna a chave de VALIDADE_CERT
+function detectarTipoCert(nome){
+  const n = nome.toUpperCase();
+  if(n.includes('CBSP')) return 'CBSP'; // provisória por padrão; homologado tratado à parte
+  if(n.includes('THUET')) return 'THUET';
+  if(n.includes('HUET')) return 'HUET';
+  if(n.includes('CA-EBS')||n.includes('CAEBS')||n.includes('EBS')) return 'CAEBS';
+  if(n.includes('CIR')||n.includes('CADERNETA')) return 'CIR';
+  if(n.includes('GMDSS')) return 'GMDSS';
+  if(n.includes('STCW')||n.includes('DPC-1034')||n.includes('PROFICIÊNCIA')||n.includes('PROFICIENCIA')||n.includes('HABILITAÇÃO')||n.includes('HABILITACAO')||n.includes('FORMAÇÃO')||n.includes('FORMACAO')) return 'STCW';
+  if(n.includes('NR-37')||n.includes('NR37')) return 'NR-37';
+  if(n.includes('NR-35')||n.includes('NR35')) return 'NR-35';
+  if(n.includes('NR-33')||n.includes('NR33')) return 'NR-33';
+  if(n.includes('NR-10')||n.includes('NR10')) return 'NR-10';
+  if(n.includes('NR-13')||n.includes('NR13')) return 'NR-13';
+  if(n.includes('NR-23')||n.includes('NR23')||n.includes('BRIGADA')||n.includes('INCÊNDIO')||n.includes('INCENDIO')) return 'NR-23';
+  if(n.includes('NR-20')||n.includes('NR20')||n.includes('INFLAMÁVEL')||n.includes('INFLAMAVEL')) return 'NR-20';
+  if(n.includes('NR-05')||n.includes('NR05')||n.includes('CIPA')) return 'NR-05';
+  if(n.includes('NR-06')||n.includes('NR06')||n.includes('EPI')) return 'NR-06';
+  if(n.includes('NR-11')||n.includes('NR11')) return 'NR-11';
+  if(n.includes('NR-12')||n.includes('NR12')) return 'NR-12';
+  if(n.includes('NR-18')||n.includes('NR18')) return 'NR-18';
+  if(n.includes('NR-36')||n.includes('NR36')) return 'NR-36';
+  if((n.includes('NR-34')||n.includes('NR34'))&&(n.includes('ESTANQUEIDADE'))) return 'NR-34-ESTANQUEIDADE';
+  if(n.includes('NR-34')||n.includes('NR34')) return 'NR-34';
+  return null; // desconhecido
+}
 
 // ===== EMISSORAS AUTORIZADAS POR CERTIFICADO =====
 const EMISSORAS_AUTORIZADAS = {
@@ -21,7 +80,6 @@ const EMISSORAS_AUTORIZADAS = {
     tipo: "OPITO (Offshore Petroleum Industry Training Organisation)",
     campo_validador: "OPITO UCN",
     empresas: ["RelyOn Nutec","West Group","FCO Offshore"]
-    // ATENÇÃO: ao receber modelos da West Group e FCO, adicionar descrição visual aqui
   },
   CBSP: {
     tipo: "DPC/Marinha do Brasil (NORMAM-104)",
@@ -33,42 +91,29 @@ const EMISSORAS_AUTORIZADAS = {
   }
 };
 
-// Verifica se a emissora do certificado é autorizada.
-// Retorna { valido, alerta, acao }
 function validarEmissoraCertificado(tipoCert, nomeEmissora){
-  if(!tipoCert || !nomeEmissora) return { valido: true, alerta: null, acao: 'aceitar' };
+  if(!tipoCert||!nomeEmissora) return {valido:true,alerta:null,acao:'aceitar'};
   const tipo = tipoCert.toUpperCase();
   const emissora = nomeEmissora.toLowerCase();
-
-  if(tipo === 'THUET'){
-    const autorizada = EMISSORAS_AUTORIZADAS.THUET.empresas.some(e =>
-      emissora.includes(e.toLowerCase().split(' ')[0])
-    );
-    if(!autorizada){
-      return {
-        valido: false,
-        alerta: `⚠️ THUET emitido por empresa não identificada como credenciada OPITO no Brasil (${nomeEmissora}). Emissoras autorizadas: RelyOn Nutec, West Group e FCO Offshore. Verificar presença do código OPITO UCN no certificado.`,
-        acao: 'solicitar_foto_melhor_e_perguntar_onde_fez'
-      };
-    }
-    return { valido: true, alerta: null, acao: 'aceitar' };
+  if(tipo==='THUET'){
+    const autorizada = EMISSORAS_AUTORIZADAS.THUET.empresas.some(e=>emissora.includes(e.toLowerCase().split(' ')[0]));
+    if(!autorizada) return {
+      valido:false,
+      alerta:`⚠️ THUET emitido por empresa não identificada como credenciada OPITO no Brasil (${nomeEmissora}). Emissoras autorizadas: RelyOn Nutec, West Group e FCO Offshore. Verificar presença do código OPITO UCN no certificado.`,
+      acao:'solicitar_foto_melhor_e_perguntar_onde_fez'
+    };
+    return {valido:true,alerta:null,acao:'aceitar'};
   }
-
-  if(tipo === 'CBSP'){
-    const conhecida = EMISSORAS_AUTORIZADAS.CBSP.empresas_conhecidas.some(e =>
-      emissora.includes(e.toLowerCase().split(' ')[0])
-    );
-    if(!conhecida){
-      return {
-        valido: null,
-        alerta: `⚠️ CBSP emitido por empresa não listada como credenciada DPC conhecida (${nomeEmissora}). Aceito provisoriamente — verificar homologação.`,
-        acao: 'aceitar_com_alerta_e_perguntar_onde_fez'
-      };
-    }
-    return { valido: true, alerta: null, acao: 'aceitar' };
+  if(tipo==='CBSP'){
+    const conhecida = EMISSORAS_AUTORIZADAS.CBSP.empresas_conhecidas.some(e=>emissora.includes(e.toLowerCase().split(' ')[0]));
+    if(!conhecida) return {
+      valido:null,
+      alerta:`⚠️ CBSP emitido por empresa não listada como credenciada DPC conhecida (${nomeEmissora}). Aceito provisoriamente — verificar homologação.`,
+      acao:'aceitar_com_alerta_e_perguntar_onde_fez'
+    };
+    return {valido:true,alerta:null,acao:'aceitar'};
   }
-
-  return { valido: true, alerta: null, acao: 'aceitar' };
+  return {valido:true,alerta:null,acao:'aceitar'};
 }
 
 // ===== MATRIZ DE TREINAMENTOS SBM OFFSHORE =====
@@ -129,31 +174,16 @@ const MARITIMO_FUNCAO = {
 };
 
 const STCW_RANK = {
-  CONVES:{
-    "II/4":1,"A-II/4":1,"A-II/5":1,
-    "II/3":2,
-    "II/1":3,
-    "II/2":4,
-  },
-  MAQUINAS:{
-    "III/7":1,
-    "III/3":2,"III/4":2,"A-III/4":2,
-    "III/1":3,
-    "III/2":4,
-  }
+  CONVES:{"II/4":1,"A-II/4":1,"A-II/5":1,"II/3":2,"II/1":3,"II/2":4},
+  MAQUINAS:{"III/7":1,"III/3":2,"III/4":2,"A-III/4":2,"III/1":3,"III/2":4}
 };
 
-function atendeStcw(cadeia, exigido, candidato){
+function atendeStcw(cadeia,exigido,candidato){
   if(!exigido||!cadeia) return true;
-  const rank = STCW_RANK[cadeia];
-  if(!rank) return true;
-  const rankExigido = rank[(exigido||'').trim().split(' ')[0].toUpperCase()];
-  if(!rankExigido) return true;
-  const niveis = Array.isArray(candidato)?candidato:[candidato];
-  const melhor = niveis.reduce((max,nv)=>{
-    const r = rank[(nv||'').trim().split(' ')[0].toUpperCase()];
-    return r&&r>max?r:max;
-  },0);
+  const rank=STCW_RANK[cadeia]; if(!rank) return true;
+  const rankExigido=rank[(exigido||'').trim().split(' ')[0].toUpperCase()]; if(!rankExigido) return true;
+  const niveis=Array.isArray(candidato)?candidato:[candidato];
+  const melhor=niveis.reduce((max,nv)=>{const r=rank[(nv||'').trim().split(' ')[0].toUpperCase()];return r&&r>max?r:max;},0);
   return melhor>=rankExigido;
 }
 
@@ -179,8 +209,8 @@ const MATRIZ_TREINAMENTOS = {
 
 function mapearFuncaoSBM(textoFuncao){
   if(!textoFuncao) return null;
-  const t = textoFuncao.toLowerCase();
-  const regras = [
+  const t=textoFuncao.toLowerCase();
+  const regras=[
     [["guindast","crane","ogd"],"Operador de Guindaste"],
     [["mestre de cabotagem","contramestre","gp foreman","mcb"],"Mestre de Cabotagem (Contramestre)"],
     [["marinheiro de conv","gp operator ab","mnc","convés","conves"],"Marinheiro de Convés"],
@@ -199,27 +229,21 @@ function mapearFuncaoSBM(textoFuncao){
     [["produção","producao","production operator","opc","utilidad"],"Operador de Produção"],
     [["manutenção","manutencao","maintenance operator","oficial de máquinas","oficial de maquinas","mom","2om"],"2º Oficial de Máquinas / Operador de Manutenção"],
   ];
-  for(const [chaves,alvo] of regras){
-    if(chaves.some(k=>t.includes(k))) return alvo;
-  }
+  for(const [chaves,alvo] of regras){ if(chaves.some(k=>t.includes(k))) return alvo; }
   return null;
 }
 
 function guiaMatriz(textoFuncao){
-  const chave = mapearFuncaoSBM(textoFuncao);
+  const chave=mapearFuncaoSBM(textoFuncao);
   if(!chave||!MATRIZ_TREINAMENTOS[chave]) return '';
-  const f = MATRIZ_TREINAMENTOS[chave];
-  const nome = c => CERT_NOMES[c]||c;
-  const grupos = {ELIM_SEMPRE:[],ELIM_SOLICITADO:[],CRITICO:[],LEVE:[],PADRAO:[]};
-  (f.obrig||[]).forEach(c=>{
-    const nv = CERT_NIVEL[c]||'PADRAO';
-    (grupos[nv]=grupos[nv]||[]).push(nome(c));
-  });
-  const cond = (f.cond||[]).map(nome);
-  const {ELIM_SEMPRE:elimSempre,ELIM_SOLICITADO:elimSolic,CRITICO:criticos,LEVE:leves,PADRAO:padrao} = grupos;
-  const maritimo = MARITIMO_FUNCAO[chave]||[];
-
-  let g = `\n\n[MATRIZ SBM — função reconhecida como "${chave}" (${f.jd}). Regras de certificado para esta vaga offshore SBM, por nível:`;
+  const f=MATRIZ_TREINAMENTOS[chave];
+  const nome=c=>CERT_NOMES[c]||c;
+  const grupos={ELIM_SEMPRE:[],ELIM_SOLICITADO:[],CRITICO:[],LEVE:[],PADRAO:[]};
+  (f.obrig||[]).forEach(c=>{const nv=CERT_NIVEL[c]||'PADRAO';(grupos[nv]=grupos[nv]||[]).push(nome(c));});
+  const cond=(f.cond||[]).map(nome);
+  const {ELIM_SEMPRE:elimSempre,ELIM_SOLICITADO:elimSolic,CRITICO:criticos,LEVE:leves,PADRAO:padrao}=grupos;
+  const maritimo=MARITIMO_FUNCAO[chave]||[];
+  let g=`\n\n[MATRIZ SBM — função reconhecida como "${chave}" (${f.jd}). Regras de certificado para esta vaga offshore SBM, por nível:`;
   if(elimSempre.length) g+=`\n- ELIMINATÓRIOS (sem estes, válidos e comprovados por imagem/PDF, NÃO aprove): ${elimSempre.join(', ')}.`;
   if(elimSolic.length)  g+=`\n- ELIMINATÓRIOS quando exigidos para esta função: ${elimSolic.join(', ')}.`;
   if(maritimo.length)   g+=`\n- DOCUMENTOS MARÍTIMOS obrigatórios (cobre por imagem; aprove quem tem STCW IGUAL OU SUPERIOR na MESMA cadeia): ${maritimo.join(', ')}.`;
@@ -320,10 +344,24 @@ TIPOS DE DOCUMENTOS QUE VOCÊ PODE RECEBER E COMO RECONHECÊ-LOS:
    - Validade pode ser INDETERMINADA (formação básica) ou data específica
    - VALIDADE: usar data impressa; se "INDETERMINADA", registrar como vitalício
 
+6. NRs — NORMAS REGULAMENTADORAS (certificados de treinamento):
+   Validades legais por NR (fonte: textos oficiais MTE/gov.br):
+   - NR-05 (CIPA): 1 ano
+   - NR-10 (Eletricidade): 2 anos
+   - NR-20 (Inflamáveis): 2 anos
+   - NR-23 (Brigada/Combate a Incêndio): 1 ano
+   - NR-33 (Espaços Confinados): 1 ano
+   - NR-34 Teste de Estanqueidade: 1 ano
+   - NR-35 (Trabalho em Altura): 2 anos
+   - NR-36 (Abate/Carnes): 1 ano
+   - NR-37 Básico e Avançado (Plataformas Offshore): 5 anos
+   - NR-06, NR-11, NR-12, NR-13, NR-18, NR-34 (geral): sem prazo fixo legal — reciclagem por evento/empresa
+   O veredito técnico já calcula corretamente com base nessas validades. Use sempre o veredito.
+
 REGRAS GERAIS DE ANÁLISE DE DOCUMENTOS:
 - A validade SÓ pode ser confirmada a partir da IMAGEM ou PDF. NUNCA aceite data que o candidato apenas DIGITOU ou FALOU — peça a foto para confirmar.
 - Use EXATAMENTE a data e o status do veredito técnico entre colchetes. Não recalcule.
-- Se VÁLIDO: confirme naturalmente (ex: "Seu CBSP está válido até [data do veredito], ótimo!").
+- Se VÁLIDO: confirme naturalmente (ex: "Sua NR-37 está válida até [data do veredito], ótimo!").
 - Se VENCIDO: avise com clareza e pergunte se consegue renovar.
 - Se ILEGÍVEL: peça nova foto com boa iluminação, sem reflexo, documento inteiro e plano.
 - Empresa emissora desconhecida (CBSP ou THUET): aceitar provisoriamente + alertar no resumo + pedir onde fez o curso.
@@ -351,196 +389,158 @@ Responda sempre em português, de forma cordial e profissional.`;
 app.post('/webhook', async(req,res)=>{
   res.sendStatus(200);
   try{
-    const body = req.body;
-    if(body.event !== 'messages.upsert') return;
-    const msg = body.data?.messages?.[0] || body.data;
-    if(!msg || msg.key?.fromMe) return;
-    const remoteJid = msg.key?.remoteJid || '';
+    const body=req.body;
+    if(body.event!=='messages.upsert') return;
+    const msg=body.data?.messages?.[0]||body.data;
+    if(!msg||msg.key?.fromMe) return;
+    const remoteJid=msg.key?.remoteJid||'';
     if(remoteJid.includes('@g.us')) return;
-    const telefone = remoteJid.replace('@s.whatsapp.net','');
+    const telefone=remoteJid.replace('@s.whatsapp.net','');
     if(!telefone) return;
-    const messageId = msg.key?.id;
+    const messageId=msg.key?.id;
 
-    let texto = msg.message?.conversation
-      || msg.message?.extendedTextMessage?.text
-      || '';
-
-    let midia = null;
-    const imagem = msg.message?.imageMessage;
-    const documento = msg.message?.documentMessage
-      || msg.message?.documentWithCaptionMessage?.message?.documentMessage;
-    const audio = msg.message?.audioMessage;
+    let texto=msg.message?.conversation||msg.message?.extendedTextMessage?.text||'';
+    let midia=null;
+    const imagem=msg.message?.imageMessage;
+    const documento=msg.message?.documentMessage||msg.message?.documentWithCaptionMessage?.message?.documentMessage;
+    const audio=msg.message?.audioMessage;
 
     if(imagem){
       console.log(`Imagem recebida de ${telefone}, baixando...`);
-      const base64 = await baixarMidia(messageId);
-      if(base64){
-        midia = {tipo:'image', media_type: imagem.mimetype||'image/jpeg', dados: base64};
-        if(!texto) texto = imagem.caption || 'Segue o documento em imagem.';
-      } else {
-        texto = 'Recebi sua imagem mas não consegui abrir. Pode reenviar, por favor?';
-      }
+      const base64=await baixarMidia(messageId);
+      if(base64){ midia={tipo:'image',media_type:imagem.mimetype||'image/jpeg',dados:base64}; if(!texto) texto=imagem.caption||'Segue o documento em imagem.'; }
+      else texto='Recebi sua imagem mas não consegui abrir. Pode reenviar, por favor?';
     } else if(documento){
-      const mime = documento.mimetype||'';
+      const mime=documento.mimetype||'';
       console.log(`Documento recebido de ${telefone} (${mime}), baixando...`);
-      const base64 = await baixarMidia(messageId);
-      if(base64 && mime.includes('pdf')){
-        midia = {tipo:'document', media_type:'application/pdf', dados: base64};
-        if(!texto) texto = 'Segue meu certificado em PDF.';
-      } else if(base64){
-        texto = 'Recebi seu arquivo. Se for o currículo, pode me mandar em PDF ou foto? Assim consigo analisar melhor.';
-      } else {
-        texto = 'Recebi seu arquivo mas não consegui abrir. Pode reenviar, por favor?';
-      }
-    } else if(audio && !texto){
+      const base64=await baixarMidia(messageId);
+      if(base64&&mime.includes('pdf')){ midia={tipo:'document',media_type:'application/pdf',dados:base64}; if(!texto) texto='Segue meu certificado em PDF.'; }
+      else if(base64) texto='Recebi seu arquivo. Se for o currículo, pode me mandar em PDF ou foto? Assim consigo analisar melhor.';
+      else texto='Recebi seu arquivo mas não consegui abrir. Pode reenviar, por favor?';
+    } else if(audio&&!texto){
       console.log(`Áudio recebido de ${telefone}, transcrevendo...`);
-      texto = await transcreverAudio(messageId);
+      texto=await transcreverAudio(messageId);
     }
 
-    if(!texto && !midia) return;
+    if(!texto&&!midia) return;
     console.log(`Mensagem de ${telefone}: ${texto}${midia?' [+ '+midia.tipo+']':''}`);
 
-    let veredito = '';
-    if(midia){
-      veredito = await verificarCertificado(midia);
-      if(veredito) console.log(`Veredito: ${veredito}`);
-    }
+    let veredito='';
+    if(midia){ veredito=await verificarCertificado(midia); if(veredito) console.log(`Veredito: ${veredito}`); }
 
     if(!conversas[telefone]) conversas[telefone]=[];
-    let dicaMatriz = guiaMatriz(texto);
-    if(!dicaMatriz){
-      const ctx = conversas[telefone].map(x=>typeof x.content==='string'?x.content:'').join(' ');
-      dicaMatriz = guiaMatriz(ctx);
-    }
-    const veredictoComMatriz = (veredito||'') + (dicaMatriz||'');
-    let resposta = await processarIA(texto, conversas[telefone], midia, veredictoComMatriz);
+    let dicaMatriz=guiaMatriz(texto);
+    if(!dicaMatriz){ const ctx=conversas[telefone].map(x=>typeof x.content==='string'?x.content:'').join(' '); dicaMatriz=guiaMatriz(ctx); }
+    const veredictoComMatriz=(veredito||'')+(dicaMatriz||'');
+    let resposta=await processarIA(texto,conversas[telefone],midia,veredictoComMatriz);
 
-    const marca = resposta.match(/\[\[APROVADO\|([\s\S]*?)\]\]/);
-    if(marca){
-      try{ await enviarAprovadoParaGrupo(marca[1], telefone); }
-      catch(e){ console.error('Erro ao enviar aprovado ao grupo:', e); }
-      resposta = resposta.replace(/\[\[APROVADO\|[\s\S]*?\]\]/g,'').trim();
-    }
+    const marca=resposta.match(/\[\[APROVADO\|([\s\S]*?)\]\]/);
+    if(marca){ try{ await enviarAprovadoParaGrupo(marca[1],telefone); }catch(e){ console.error('Erro ao enviar aprovado ao grupo:',e); } resposta=resposta.replace(/\[\[APROVADO\|[\s\S]*?\]\]/g,'').trim(); }
 
-    resposta = aplicarNumeroMarina(resposta);
-
-    conversas[telefone].push({role:'user', content: texto+(midia?' [enviou um documento]':'')});
-    conversas[telefone].push({role:'assistant', content: resposta});
+    resposta=aplicarNumeroMarina(resposta);
+    conversas[telefone].push({role:'user',content:texto+(midia?' [enviou um documento]':'')});
+    conversas[telefone].push({role:'assistant',content:resposta});
     if(conversas[telefone].length>20) conversas[telefone]=conversas[telefone].slice(-20);
-    await enviarWA(telefone, resposta);
+    await enviarWA(telefone,resposta);
   }catch(e){console.error('Erro webhook:',e);}
 });
 
 // ===== ENDPOINTS DO APP =====
-app.post('/claude', async(req,res)=>{
+app.post('/claude',async(req,res)=>{
   try{
-    const {messages,system,max_tokens} = req.body;
-    const response = await fetch('https://api.anthropic.com/v1/messages',{
-      method:'POST',
-      headers:{'Content-Type':'application/json','x-api-key':process.env.ANTHROPIC_API_KEY,'anthropic-version':'2023-06-01'},
-      body: JSON.stringify({model:'claude-sonnet-4-6',max_tokens:max_tokens||600,system:system||'',messages})
-    });
-    const data = await response.json();
-    res.json(data);
-  }catch(e){ res.status(500).json({error:e.message}); }
+    const {messages,system,max_tokens}=req.body;
+    const response=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json','x-api-key':process.env.ANTHROPIC_API_KEY,'anthropic-version':'2023-06-01'},body:JSON.stringify({model:'claude-sonnet-4-6',max_tokens:max_tokens||600,system:system||'',messages})});
+    const data=await response.json(); res.json(data);
+  }catch(e){res.status(500).json({error:e.message});}
 });
 
-app.post('/login', (req,res)=>{
+app.post('/login',(req,res)=>{
   try{
-    const {senha} = req.body;
+    const {senha}=req.body;
     if(!process.env.APP_SENHA) return res.status(500).json({ok:false,erro:'Senha do app não configurada no servidor.'});
-    if(senha && senha===process.env.APP_SENHA) return res.json({ok:true});
+    if(senha&&senha===process.env.APP_SENHA) return res.json({ok:true});
     return res.status(401).json({ok:false});
-  }catch(e){ res.status(500).json({ok:false,erro:e.message}); }
+  }catch(e){res.status(500).json({ok:false,erro:e.message});}
 });
 
 // ===== FUNÇÕES AUXILIARES =====
 function blocoMidia(midia){
   return midia.tipo==='image'
-    ? {type:'image', source:{type:'base64', media_type:midia.media_type, data:midia.dados}}
-    : {type:'document', source:{type:'base64', media_type:'application/pdf', data:midia.dados}};
+    ?{type:'image',source:{type:'base64',media_type:midia.media_type,data:midia.dados}}
+    :{type:'document',source:{type:'base64',media_type:'application/pdf',data:midia.dados}};
 }
 
 async function verificarCertificado(midia){
   try{
-    const instrucao = `Analise este documento. Se NÃO for um certificado (ex: currículo, foto pessoal, outro), responda apenas: {"certificado":false}.
+    const instrucao=`Analise este documento. Se NÃO for um certificado (ex: currículo, foto pessoal, outro), responda apenas: {"certificado":false}.
 Se for um certificado, responda APENAS com JSON puro, sem texto ao redor, neste formato:
-{"certificado":true,"nome":"NOME DO CERTIFICADO (ex: CBSP, THUET, CIR, STCW ou outro)","emissora":"NOME DA EMPRESA OU ÓRGÃO EMISSOR impresso no documento, ou null","data_validade":"DD/MM/AAAA da VALIDADE/VENCIMENTO impressa, ou null","data_conclusao":"DD/MM/AAAA da EMISSÃO/CONCLUSÃO/REALIZAÇÃO, ou null","tem_opito_ucn":true/false,"legivel":true}
+{"certificado":true,"nome":"NOME DO CERTIFICADO (ex: CBSP, THUET, CIR, NR-37, NR-35, NR-33, NR-10, etc.)","emissora":"NOME DA EMPRESA OU ÓRGÃO EMISSOR impresso no documento, ou null","data_validade":"DD/MM/AAAA da VALIDADE/VENCIMENTO impressa, ou null","data_conclusao":"DD/MM/AAAA da EMISSÃO/CONCLUSÃO/REALIZAÇÃO, ou null","tem_opito_ucn":true/false,"tem_carimbo_marinha":true/false,"legivel":true}
 IMPORTANTE:
 - NÃO confunda data de emissão com data de validade.
 - Para CIR: "Data de Emissão" vai em data_conclusao; "Data de Validade / Expiration Date" vai em data_validade.
-- Para THUET: o campo "Válido Até / Expiry Date" vai em data_validade; o campo "Período/Period" vai em data_conclusao.
-- Para Declaração CBSP provisória: a data da declaração (emissão) vai em data_conclusao; data_validade = null (o sistema calcula +90 dias).
-- Para CBSP homologado: data de emissão em data_conclusao; data_validade = null (o sistema calcula +5 anos).
+- Para THUET: "Válido Até / Expiry Date" vai em data_validade; "Período/Period" vai em data_conclusao.
+- Para Declaração CBSP provisória (sem carimbo da Marinha): data da declaração em data_conclusao; data_validade = null.
+- Para CBSP homologado (com carimbo da Marinha): data de emissão em data_conclusao; data_validade = null.
+- Para NRs: se houver validade impressa, colocar em data_validade; se só houver data de conclusão/emissão, colocar em data_conclusao e data_validade = null.
 - tem_opito_ucn: true se houver campo "OPITO UCN" com código numérico, false caso contrário.
-- emissora: nome da empresa/órgão emissor impresso no documento (ex: "Lighthouse-SMS", "RelyOn Nutec", "Marinha do Brasil").
+- tem_carimbo_marinha: true se houver carimbo/selo oficial da Marinha do Brasil ou Capitania dos Portos.
+- emissora: nome da empresa/órgão emissor impresso no documento.
 - Use null sem aspas quando a informação não existir.
 - Se ilegível, borrado ou incompleto: {"certificado":true,"legivel":false}.`;
 
-    const r = await fetch('https://api.anthropic.com/v1/messages',{
-      method:'POST',
-      headers:{'Content-Type':'application/json','x-api-key':process.env.ANTHROPIC_API_KEY,'anthropic-version':'2023-06-01'},
-      body: JSON.stringify({
-        model:'claude-sonnet-4-6',
-        max_tokens:350,
-        system:'Você extrai dados de documentos e responde somente em JSON puro, sem markdown, sem explicação.',
-        messages:[{role:'user', content:[blocoMidia(midia),{type:'text',text:instrucao}]}]
-      })
-    });
-    const d = await r.json();
-    let txt = (d.content?.[0]?.text||'').replace(/```json|```/g,'').trim();
-    let dados;
-    try{ dados = JSON.parse(txt); }catch(e){ console.error('JSON inválido do extrator:',txt); return ''; }
+    const r=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json','x-api-key':process.env.ANTHROPIC_API_KEY,'anthropic-version':'2023-06-01'},body:JSON.stringify({model:'claude-sonnet-4-6',max_tokens:400,system:'Você extrai dados de documentos e responde somente em JSON puro, sem markdown, sem explicação.',messages:[{role:'user',content:[blocoMidia(midia),{type:'text',text:instrucao}]}]})});
+    const d=await r.json();
+    let txt=(d.content?.[0]?.text||'').replace(/```json|```/g,'').trim();
+    let dados; try{dados=JSON.parse(txt);}catch(e){console.error('JSON inválido do extrator:',txt);return '';}
 
     if(!dados.certificado) return '';
-    if(dados.legivel===false){
-      return `[OBSERVAÇÃO TÉCNICA: o documento parece ser um certificado, mas está ILEGÍVEL ou incompleto. Peça ao candidato para reenviar a foto com boa nitidez e o documento inteiro. NÃO considere nenhuma data até receber imagem legível.]`;
-    }
+    if(dados.legivel===false) return `[OBSERVAÇÃO TÉCNICA: o documento parece ser um certificado, mas está ILEGÍVEL ou incompleto. Peça ao candidato para reenviar a foto com boa nitidez e o documento inteiro. NÃO considere nenhuma data até receber imagem legível.]`;
 
-    const nome = (dados.nome||'').toUpperCase();
-    const emissora = dados.emissora || '';
+    const nome=(dados.nome||'').toUpperCase();
+    const emissora=dados.emissora||'';
 
     // Valida emissora para THUET e CBSP
-    let alertaEmissora = '';
-    if(nome.includes('THUET') || nome.includes('CBSP')){
-      const tipoCert = nome.includes('THUET') ? 'THUET' : 'CBSP';
-      const resultadoEmissora = validarEmissoraCertificado(tipoCert, emissora);
-      if(resultadoEmissora.alerta){
-        alertaEmissora = ` ${resultadoEmissora.alerta}`;
-        // Para THUET: verifica também a presença do OPITO UCN
-        if(tipoCert === 'THUET' && dados.tem_opito_ucn === false){
-          alertaEmissora += ` ATENÇÃO CRÍTICA: este certificado NÃO possui o campo "OPITO UCN" — é um curso livre NÃO homologado pela OPITO. Informar ao candidato que o THUET precisa ser refeito em empresa credenciada OPITO (RelyOn Nutec, West Group ou FCO Offshore).`;
-        }
-      } else if(tipoCert === 'THUET' && dados.tem_opito_ucn === false){
-        alertaEmissora = ` ATENÇÃO: este certificado THUET NÃO possui o campo "OPITO UCN" — é curso livre NÃO homologado. Informar ao candidato que precisa refazer em empresa credenciada OPITO.`;
-      }
+    let alertaEmissora='';
+    if(nome.includes('THUET')||nome.includes('CBSP')){
+      const tipoCert=nome.includes('THUET')?'THUET':'CBSP';
+      const resEm=validarEmissoraCertificado(tipoCert,emissora);
+      if(resEm.alerta){ alertaEmissora=` ${resEm.alerta}`; if(tipoCert==='THUET'&&dados.tem_opito_ucn===false) alertaEmissora+=` ATENÇÃO CRÍTICA: este certificado NÃO possui o campo "OPITO UCN" — é um curso livre NÃO homologado pela OPITO. Informar ao candidato que o THUET precisa ser refeito em empresa credenciada OPITO (RelyOn Nutec, West Group ou FCO Offshore).`; }
+      else if(tipoCert==='THUET'&&dados.tem_opito_ucn===false) alertaEmissora=` ATENÇÃO: este certificado THUET NÃO possui o campo "OPITO UCN" — é curso livre NÃO homologado. Informar ao candidato que precisa refazer em empresa credenciada OPITO.`;
     }
 
-    // Calcula validade
-    let vencimento = null;
-    let origemCalculo = '';
-    const ehCincoAnos = VALIDADE_5_ANOS.some(c=>nome.includes(c));
+    // Calcula validade usando VALIDADE_CERT
+    let vencimento=null;
+    let origemCalculo='';
 
-    // Regra especial para Declaração CBSP provisória: +90 dias da emissão
-    const ehDeclaracaoCbsp = nome.includes('CBSP') && !dados.data_validade;
-    if(ehDeclaracaoCbsp){
-      const base = parseData(dados.data_conclusao);
-      if(base){
-        vencimento = new Date(base);
-        vencimento.setDate(vencimento.getDate()+90);
-        origemCalculo = ` (declaração provisória; calculado: emissão ${dados.data_conclusao} + 90 dias)`;
+    // Primeiro: se há data de validade impressa, usa sempre
+    vencimento=parseData(dados.data_validade);
+
+    if(!vencimento){
+      // Detecta tipo do certificado para saber quantos anos/dias calcular
+      const tipoCert=detectarTipoCert(nome);
+      const regra=VALIDADE_CERT[tipoCert];
+
+      // CBSP: distingue provisória (sem carimbo) de homologado (com carimbo)
+      let regraFinal=regra;
+      if(nome.includes('CBSP')){
+        regraFinal=dados.tem_carimbo_marinha?VALIDADE_CERT['CBSP_HOMOLOGADO']:VALIDADE_CERT['CBSP'];
       }
-    } else {
-      vencimento = parseData(dados.data_validade);
-      if(!vencimento && ehCincoAnos){
-        const base = parseData(dados.data_conclusao);
+
+      if(regraFinal&&!regraFinal.sem_prazo){
+        const base=parseData(dados.data_conclusao);
         if(base){
-          vencimento = new Date(base);
-          vencimento.setFullYear(vencimento.getFullYear()+5);
-          origemCalculo = ` (sem validade impressa; calculado: emissão/conclusão ${dados.data_conclusao} + 5 anos)`;
+          vencimento=new Date(base);
+          if(regraFinal.dias){
+            vencimento.setDate(vencimento.getDate()+regraFinal.dias);
+            origemCalculo=` (calculado: emissão ${dados.data_conclusao} + ${regraFinal.dias} dias — ${regraFinal.desc})`;
+          } else if(regraFinal.anos){
+            vencimento.setFullYear(vencimento.getFullYear()+regraFinal.anos);
+            origemCalculo=` (calculado: emissão/conclusão ${dados.data_conclusao} + ${regraFinal.anos} ano(s) — ${regraFinal.desc})`;
+          }
         }
-      } else if(!vencimento){
-        vencimento = parseData(dados.data_conclusao);
+      } else if(regraFinal&&regraFinal.sem_prazo){
+        // NR sem prazo fixo: não calcular, reportar
+        return `[OBSERVAÇÃO TÉCNICA: documento identificado como ${nome||'certificado'}${emissora?' ('+emissora+')':''}. Esta NR não possui prazo de validade fixo em lei — reciclagem exigida apenas por evento (mudança de função, acidente, etc.). Registre a data de conclusão (${dados.data_conclusao||'não identificada'}) e informe ao candidato que a validade depende das regras da empresa contratante.${alertaEmissora}]`;
       }
     }
 
@@ -548,32 +548,27 @@ IMPORTANTE:
       return `[OBSERVAÇÃO TÉCNICA: documento identificado como ${nome||'certificado'}${emissora?' emitido por '+emissora:''}, mas não foi possível determinar a validade. Peça ao candidato para confirmar a data de validade ou de conclusão.${alertaEmissora}]`;
     }
 
-    const hoje = new Date(); hoje.setHours(0,0,0,0);
-    const venc = new Date(vencimento); venc.setHours(0,0,0,0);
-    const vencStr = venc.toLocaleDateString('pt-BR');
-    const status = venc < hoje ? 'VENCIDO' : 'VÁLIDO';
+    const hoje=new Date(); hoje.setHours(0,0,0,0);
+    const venc=new Date(vencimento); venc.setHours(0,0,0,0);
+    const vencStr=venc.toLocaleDateString('pt-BR');
+    const status=venc<hoje?'VENCIDO':'VÁLIDO';
     return `[OBSERVAÇÃO TÉCNICA (não mostre os colchetes ao candidato): certificado ${nome||''}${emissora?' ('+emissora+')':''} está ${status}. Vencimento: ${vencStr}${origemCalculo}.${alertaEmissora}]`;
-  }catch(e){ console.error('Erro verificar certificado:',e); return ''; }
+  }catch(e){console.error('Erro verificar certificado:',e);return '';}
 }
 
 function parseData(s){
   if(!s||s==='null') return null;
-  const m = String(s).match(/(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})/);
-  if(m){
-    let [_,d,mes,a]=m;
-    if(a.length===2) a='20'+a;
-    const dt = new Date(Number(a),Number(mes)-1,Number(d));
-    return isNaN(dt)?null:dt;
-  }
-  const m2 = String(s).match(/(\d{1,2})[\/\-.](\d{4})/);
-  if(m2){ const dt=new Date(Number(m2[2]),Number(m2[1])-1,1); return isNaN(dt)?null:dt; }
+  const m=String(s).match(/(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})/);
+  if(m){let[_,d,mes,a]=m;if(a.length===2)a='20'+a;const dt=new Date(Number(a),Number(mes)-1,Number(d));return isNaN(dt)?null:dt;}
+  const m2=String(s).match(/(\d{1,2})[\/\-.](\d{4})/);
+  if(m2){const dt=new Date(Number(m2[2]),Number(m2[1])-1,1);return isNaN(dt)?null:dt;}
   return null;
 }
 
 function numeroMarinaFormatado(){
-  const raw = (process.env.NUMERO_MARINA||'').replace(/\D/g,'');
+  const raw=(process.env.NUMERO_MARINA||'').replace(/\D/g,'');
   if(!raw) return '';
-  let n = raw;
+  let n=raw;
   if(n.startsWith('55')&&n.length>=12) n=n.slice(2);
   if(n.length===11) return `(${n.slice(0,2)}) ${n.slice(2,7)}-${n.slice(7)}`;
   if(n.length===10) return `(${n.slice(0,2)}) ${n.slice(2,6)}-${n.slice(6)}`;
@@ -582,123 +577,77 @@ function numeroMarinaFormatado(){
 
 function aplicarNumeroMarina(texto){
   if(!texto) return texto;
-  const num = numeroMarinaFormatado();
+  const num=numeroMarinaFormatado();
   if(num) return texto.replace(/\[NUMERO_MARINA\]/g,num);
   return texto.replace(/\s*\(\s*\[NUMERO_MARINA\]\s*\)/g,'').replace(/\[NUMERO_MARINA\]/g,'').trim();
 }
 
-async function processarIA(texto, historico, midia, veredito){
+async function processarIA(texto,historico,midia,veredito){
   try{
     let conteudoUser;
-    const textoFinal = veredito ? `${texto}\n${veredito}` : texto;
-    if(midia){
-      conteudoUser = [blocoMidia(midia),{type:'text',text:textoFinal}];
-    } else {
-      conteudoUser = textoFinal;
-    }
-    const msgs = [...historico,{role:'user',content:conteudoUser}];
-    const hoje = new Date().toLocaleDateString('pt-BR',{timeZone:'America/Sao_Paulo',day:'2-digit',month:'long',year:'numeric'});
-    const systemComData = `DATA DE HOJE: ${hoje}.\n\n`+SYSTEM_MARINA;
-    const r = await fetch('https://api.anthropic.com/v1/messages',{
-      method:'POST',
-      headers:{'Content-Type':'application/json','x-api-key':process.env.ANTHROPIC_API_KEY,'anthropic-version':'2023-06-01'},
-      body: JSON.stringify({model:'claude-sonnet-4-6',max_tokens:500,system:systemComData,messages:msgs})
-    });
-    const d = await r.json();
+    const textoFinal=veredito?`${texto}\n${veredito}`:texto;
+    if(midia){ conteudoUser=[blocoMidia(midia),{type:'text',text:textoFinal}]; }
+    else{ conteudoUser=textoFinal; }
+    const msgs=[...historico,{role:'user',content:conteudoUser}];
+    const hoje=new Date().toLocaleDateString('pt-BR',{timeZone:'America/Sao_Paulo',day:'2-digit',month:'long',year:'numeric'});
+    const systemComData=`DATA DE HOJE: ${hoje}.\n\n`+SYSTEM_MARINA;
+    const r=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json','x-api-key':process.env.ANTHROPIC_API_KEY,'anthropic-version':'2023-06-01'},body:JSON.stringify({model:'claude-sonnet-4-6',max_tokens:500,system:systemComData,messages:msgs})});
+    const d=await r.json();
     return d.content?.[0]?.text||'Olá! Tudo bem?';
-  }catch(e){console.error('Erro IA:',e); return 'Olá! Tudo bem? Sou da Hunters Manpower.';}
+  }catch(e){console.error('Erro IA:',e);return 'Olá! Tudo bem? Sou da Hunters Manpower.';}
 }
 
 async function baixarMidia(messageId){
   try{
-    const rb = await fetch(`${process.env.EVO_URL}/chat/getBase64FromMediaMessage/${process.env.EVO_INSTANCE}`,{
-      method:'POST',
-      headers:{'Content-Type':'application/json','apikey':process.env.EVO_KEY},
-      body: JSON.stringify({message:{key:{id:messageId}},convertToMp4:false})
-    });
-    const db = await rb.json();
-    const base64 = db?.base64||db?.media||db?.buffer;
+    const rb=await fetch(`${process.env.EVO_URL}/chat/getBase64FromMediaMessage/${process.env.EVO_INSTANCE}`,{method:'POST',headers:{'Content-Type':'application/json','apikey':process.env.EVO_KEY},body:JSON.stringify({message:{key:{id:messageId}},convertToMp4:false})});
+    const db=await rb.json();
+    const base64=db?.base64||db?.media||db?.buffer;
     if(!base64) console.error('Sem base64 da mídia:',JSON.stringify(db).slice(0,300));
     return base64||null;
-  }catch(e){console.error('Erro baixar mídia:',e); return null;}
+  }catch(e){console.error('Erro baixar mídia:',e);return null;}
 }
 
 async function transcreverAudio(messageId){
   try{
-    if(!process.env.OPENAI_API_KEY)
-      return 'Recebi seu áudio, mas no momento consigo ler apenas mensagens de texto. Pode me escrever, por favor?';
-    const base64 = await baixarMidia(messageId);
+    if(!process.env.OPENAI_API_KEY) return 'Recebi seu áudio, mas no momento consigo ler apenas mensagens de texto. Pode me escrever, por favor?';
+    const base64=await baixarMidia(messageId);
     if(!base64) return 'Recebi seu áudio, mas não consegui abrir. Pode me escrever, por favor?';
-    const audioBuffer = Buffer.from(base64,'base64');
-    const form = new FormData();
+    const audioBuffer=Buffer.from(base64,'base64');
+    const form=new FormData();
     form.append('file',new Blob([audioBuffer],{type:'audio/ogg'}),'audio.ogg');
     form.append('model','whisper-1');
     form.append('language','pt');
-    const rt = await fetch('https://api.openai.com/v1/audio/transcriptions',{
-      method:'POST',
-      headers:{'Authorization':`Bearer ${process.env.OPENAI_API_KEY}`},
-      body: form
-    });
-    const dt = await rt.json();
-    const transcrito = dt?.text||'';
+    const rt=await fetch('https://api.openai.com/v1/audio/transcriptions',{method:'POST',headers:{'Authorization':`Bearer ${process.env.OPENAI_API_KEY}`},body:form});
+    const dt=await rt.json();
+    const transcrito=dt?.text||'';
     console.log(`Transcrição: ${transcrito}`);
     return transcrito||'Recebi seu áudio mas não entendi. Pode repetir por escrito?';
-  }catch(e){
-    console.error('Erro transcrição:',e);
-    return 'Recebi seu áudio, mas tive um problema para ouvir. Pode me escrever, por favor?';
-  }
+  }catch(e){console.error('Erro transcrição:',e);return 'Recebi seu áudio, mas tive um problema para ouvir. Pode me escrever, por favor?';}
 }
 
-async function enviarWA(telefone, mensagem){
+async function enviarWA(telefone,mensagem){
   try{
-    await fetch(`${process.env.EVO_URL}/message/sendText/${process.env.EVO_INSTANCE}`,{
-      method:'POST',
-      headers:{'Content-Type':'application/json','apikey':process.env.EVO_KEY},
-      body: JSON.stringify({number:telefone,text:mensagem})
-    });
+    await fetch(`${process.env.EVO_URL}/message/sendText/${process.env.EVO_INSTANCE}`,{method:'POST',headers:{'Content-Type':'application/json','apikey':process.env.EVO_KEY},body:JSON.stringify({number:telefone,text:mensagem})});
   }catch(e){console.error('Erro WA:',e);}
 }
 
-async function enviarAprovadoParaGrupo(dadosBrutos, telefoneCandidato){
-  if(!process.env.GRUPO_ID){
-    console.error('GRUPO_ID não configurado — resumo não enviado ao grupo.');
-    return;
-  }
-  if(telefoneCandidato && aprovadosEnviados[telefoneCandidato]){
-    console.log('Candidato já enviado ao grupo, ignorando duplicata:', telefoneCandidato);
-    return;
-  }
+async function enviarAprovadoParaGrupo(dadosBrutos,telefoneCandidato){
+  if(!process.env.GRUPO_ID){console.error('GRUPO_ID não configurado — resumo não enviado ao grupo.');return;}
+  if(telefoneCandidato&&aprovadosEnviados[telefoneCandidato]){console.log('Candidato já enviado ao grupo, ignorando duplicata:',telefoneCandidato);return;}
   if(telefoneCandidato) aprovadosEnviados[telefoneCandidato]=true;
-
-  const campos = {};
-  dadosBrutos.split('|').forEach(p=>{
-    const i = p.indexOf('=');
-    if(i>0){ campos[p.slice(0,i).trim().toLowerCase()]=p.slice(i+1).trim(); }
-  });
-
-  const telefone = telefoneCandidato||campos.telefone||'—';
-  const resumo =
-`🚢 *NOVO CANDIDATO APROVADO*
-
-Nome: ${campos.nome||'—'}
-Telefone: ${telefone}
-Função: ${campos.funcao||'—'}
-Certificados: ${campos.certificados||'—'}
-Experiência: ${campos.experiencia||'—'}
-Disponibilidade: ${campos.disponibilidade||'—'}`;
+  const campos={};
+  dadosBrutos.split('|').forEach(p=>{const i=p.indexOf('=');if(i>0){campos[p.slice(0,i).trim().toLowerCase()]=p.slice(i+1).trim();}});
+  const telefone=telefoneCandidato||campos.telefone||'—';
+  const resumo=`🚢 *NOVO CANDIDATO APROVADO*\n\nNome: ${campos.nome||'—'}\nTelefone: ${telefone}\nFunção: ${campos.funcao||'—'}\nCertificados: ${campos.certificados||'—'}\nExperiência: ${campos.experiencia||'—'}\nDisponibilidade: ${campos.disponibilidade||'—'}`;
   try{
-    await fetch(`${process.env.EVO_URL}/message/sendText/${process.env.EVO_INSTANCE}`,{
-      method:'POST',
-      headers:{'Content-Type':'application/json','apikey':process.env.EVO_KEY},
-      body: JSON.stringify({number:process.env.GRUPO_ID,text:resumo})
-    });
+    await fetch(`${process.env.EVO_URL}/message/sendText/${process.env.EVO_INSTANCE}`,{method:'POST',headers:{'Content-Type':'application/json','apikey':process.env.EVO_KEY},body:JSON.stringify({number:process.env.GRUPO_ID,text:resumo})});
     console.log(`Candidato aprovado enviado ao grupo: ${campos.nome||telefone}`);
   }catch(e){console.error('Erro ao enviar resumo ao grupo:',e);}
 }
 
-app.get('/', (req,res)=>{
-  res.json({status:'Hunters Manpower Webhook ativo!',versao:'3.7'});
+app.get('/',(req,res)=>{
+  res.json({status:'Hunters Manpower Webhook ativo!',versao:'3.8'});
 });
 
-const PORT = process.env.PORT||3001;
+const PORT=process.env.PORT||3001;
 app.listen(PORT,()=>console.log(`Webhook rodando na porta ${PORT}`));
