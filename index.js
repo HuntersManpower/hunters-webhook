@@ -99,12 +99,47 @@ const MARITIMO_FUNCAO = {
   "2º Oficial de Máquinas / Operador de Manutenção": ["CIR (2º Of. Máquinas ou superior)", "STCW III/1 (cadeia Máquinas)"],
 };
 
-// Hierarquia STCW (fonte SINDMAR). Aprovar se nível do candidato >= exigido, na MESMA cadeia.
-// Convés e Máquinas são cadeias SEPARADAS — III não substitui II.
+// Hierarquia STCW (fonte: NORMAM-13/DPC Anexo 2-A, lido célula a célula).
+// Rank: quanto maior o número, mais alto o nível. Aprovar se rank(candidato) >= rank(exigido).
+// IMPORTANTE: um mesmo cargo pode ter múltiplos níveis (ex: 2OM pode ter III/1, III/2 ou III/3;
+// 1ON/2ON podem ter II/1, II/2 ou II/3). A Marina NUNCA assume o nível pelo nome do cargo —
+// sempre usa o nível impresso no certificado apresentado pelo candidato.
+// Convés e Máquinas são cadeias SEPARADAS — III não substitui II e vice-versa.
 const STCW_RANK = {
-  CONVES:   { "A-II/5":1, "A-II/4":2, "II/1":3, "II/2":4 },
-  MAQUINAS: { "III/7":1, "A-III/4":2, "III/4":2, "III/1":3, "III/2":4 }
+  CONVES: {
+    "II/4": 1,   // MNC, MOC, CTR/MCB (caminho alternativo)
+    "A-II/4": 1, // alias (notação alternativa da IMO)
+    "A-II/5": 1, // alias
+    "II/3": 2,   // CTR, MCB (caminho principal); 2ON/1ON (condicionado)
+    "II/1": 3,   // 2ON, 1ON (caminho padrão EFOMM/ASON)
+    "II/2": 4,   // CLC, CCB; 1ON/2ON quando têm nível de Imediato — TOPO do convés
+  },
+  MAQUINAS: {
+    "III/7": 1,   // ELT — Eletricista (Certificado de Proficiência DPC-1034)
+    "III/3": 2,   // 2OM para embarcações 750–3000 KW
+    "III/4": 2,   // rating de máquinas (mesmo rank que III/3)
+    "A-III/4": 2, // alias
+    "III/1": 3,   // 2OM caminho padrão — Oficial de Quarto de Máquinas
+    "III/2": 4,   // OSM, 1OM; 2OM quando atua como Subchefe — TOPO de máquinas
+  }
 };
+
+// Verifica se o candidato atende o STCW exigido pela função.
+// cadeia: "CONVES" ou "MAQUINAS" | exigido: ex "II/2" | candidato: string ou array de strings.
+// Retorna true se rank(candidato) >= rank(exigido) na mesma cadeia, ou se a função não exige STCW.
+function atendeStcw(cadeia, exigido, candidato){
+  if(!exigido || !cadeia) return true;
+  const rank = STCW_RANK[cadeia];
+  if(!rank) return true;
+  const rankExigido = rank[(exigido||'').trim().split(' ')[0].toUpperCase()];
+  if(!rankExigido) return true; // nível exigido fora da tabela: não barra
+  const niveis = Array.isArray(candidato) ? candidato : [candidato];
+  const melhor = niveis.reduce((max, nv) => {
+    const r = rank[(nv||'').trim().split(' ')[0].toUpperCase()];
+    return r && r > max ? r : max;
+  }, 0);
+  return melhor >= rankExigido;
+}
 
 const MATRIZ_TREINAMENTOS = {
   "Técnico de Laboratório": { jd:"JD21", obrig:["CBSP", "NR33_ENT", "NR35", "NR37_BAS", "NR37_ADV", "THUET", "CAEBS", "PMSI"], cond:[] },
@@ -626,7 +661,7 @@ Disponibilidade: ${campos.disponibilidade||'—'}`;
 }
 
 app.get('/', (req,res)=>{
-  res.json({status:'Hunters Manpower Webhook ativo!',versao:'3.5'});
+  res.json({status:'Hunters Manpower Webhook ativo!',versao:'3.6'});
 });
 
 const PORT = process.env.PORT||3001;
