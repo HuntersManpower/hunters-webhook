@@ -415,6 +415,26 @@ app.get('/candidatos', async(req,res)=>{
   }catch(e){res.status(500).json({erro:e.message});}
 });
 
+// ── Login ────────────────────────────────────────────────────────────────────
+app.post('/login',(req,res)=>{
+  const {senha}=req.body||{};
+  if(senha&&senha===process.env.APP_SENHA){res.json({ok:true});}
+  else{res.status(401).json({ok:false});}
+});
+
+// ── Proxy Claude (para o app) ────────────────────────────────────────────────
+app.post('/claude',async(req,res)=>{
+  try{
+    const r=await fetch('https://api.anthropic.com/v1/messages',{
+      method:'POST',
+      headers:{'Content-Type':'application/json','x-api-key':process.env.ANTHROPIC_API_KEY,'anthropic-version':'2023-06-01'},
+      body:JSON.stringify(req.body)
+    });
+    const d=await r.json();
+    res.json(d);
+  }catch(e){res.status(500).json({error:e.message});}
+});
+
 // ── Status ───────────────────────────────────────────────────────────────────
 app.get('/',(req,res)=>{
   res.json({status:'Hunters Manpower Webhook ativo!',versao:'3.9',supabase:!!SUPA_URL});
