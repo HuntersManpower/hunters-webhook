@@ -1,6 +1,13 @@
 const express=require('express');
 const app=express();
 app.use(express.json({limit:'50mb'}));
+app.use((req,res,next)=>{
+  res.header('Access-Control-Allow-Origin','*');
+  res.header('Access-Control-Allow-Methods','GET,POST,OPTIONS');
+  res.header('Access-Control-Allow-Headers','Content-Type,x-api-key,x-app-senha');
+  if(req.method==='OPTIONS') return res.sendStatus(200);
+  next();
+});
 
 // ── Supabase (REST direto, sem SDK) ──────────────────────────────────────────
 const SUPA_URL = process.env.SUPABASE_URL || '';
