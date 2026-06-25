@@ -353,7 +353,7 @@ app.post('/webhook',(req,res)=>{
   setImmediate(async()=>{
     try{
       const body=req.body;
-      const evento=body?.event;
+      const evento=(body?.event||'').toLowerCase().replace('mensagens_upsert','messages.upsert');
       if(evento!=='messages.upsert') return;
       const msg=body?.data?.messages?.[0]||body?.data?.message;
       if(!msg) return;
