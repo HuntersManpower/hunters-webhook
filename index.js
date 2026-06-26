@@ -346,6 +346,7 @@ app.post('/webhook',(req,res)=>{
 
       // ✅ CORREÇÃO v3.9.1: aceitar evento em qualquer capitalização
       const evento=(body?.event||'').toUpperCase();
+      console.log('PAYLOAD:',JSON.stringify(body).substring(0,500));
       console.log(`Evento recebido: ${evento}`);
       if(evento!=='MESSAGES_UPSERT') return;
 
