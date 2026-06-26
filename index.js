@@ -189,9 +189,12 @@ async function lerDocumento(base64, mimeType){
 
 // ── Sistema de triagem Marina ────────────────────────────────────────────────
 function systemPromptMarina(estado){
+  const hoje=new Date().toLocaleDateString('pt-BR',{timeZone:'America/Sao_Paulo'});
   return `Você é Marina, recrutadora virtual da Hunters Manpower — empresa especializada em mão de obra marítima e offshore com mais de 25 anos de história.
 
 Seu estilo: profissional, cordial, objetiva. UMA pergunta por vez. Nunca liste tudo de uma vez.
+
+⚠️ DATA DE HOJE: ${hoje} — use esta data para verificar se certificados estão válidos ou vencidos.
 
 Estado atual do candidato:
 ${JSON.stringify(estado,null,2)}
@@ -371,7 +374,9 @@ async function processarMensagem(telefone, mensagemTexto, midiaBase64, midiaMime
       dadosCert._valido=valido;
       conv.estado.certificados=conv.estado.certificados||[];
       conv.estado.certificados.push(dadosCert);
-      textoFinal=`[Certificado enviado: ${dadosCert.tipo_cert||'documento'}. Emissor: ${dadosCert.emissor||'desconhecido'}. Válido: ${valido===true?'Sim':valido===false?'NÃO — VENCIDO':'indefinido'}]`;
+      const dataVenc=validade?validade.toLocaleDateString('pt-BR',{timeZone:'America/Sao_Paulo'}):dadosCert.data_validade||'desconhecida';
+      const statusValidade=valido===true?'VALIDO ate '+dataVenc:valido===false?'VENCIDO em '+dataVenc:'validade indefinida';
+      textoFinal='[VEREDITO: '+( dadosCert.tipo_cert||'doc')+' | titular='+(dadosCert.nome_titular||'?')+'| emissor='+(dadosCert.emissor||'?')+'| emissao='+(dadosCert.data_emissao||'?')+'| carimbo='+(dadosCert.tem_carimbo_marinha)+'| STATUS='+statusValidade+']';
       console.log(`Cert lido [${telefone}]:`,JSON.stringify(dadosCert));
     } else {
       textoFinal='[Imagem/documento enviado — não foi possível extrair dados automaticamente]';
