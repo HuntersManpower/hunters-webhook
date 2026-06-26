@@ -349,18 +349,18 @@ app.post('/webhook',(req,res)=>{
       const evento=(body?.event||'').toUpperCase().replace('.','_');
       console.log(`Evento: ${evento}`);
       if(evento!=='MESSAGES_UPSERT'){console.log('IGNORADO_EVENTO');return;}
-      const msg=body?.data?.messages?.[0]||body?.data?.message;
+      const msg=body?.data?.messages?.[0]||body?.data?.message||body?.data;
       console.log('MSG:', JSON.stringify(msg||null).substring(0,200));
       if(!msg){console.log('MSG_NULA');return;}
       if(msg.key?.fromMe){console.log('FROM_ME');return;}
-      const remoteJid=msg.key?.remoteJid||'';
+      const remoteJid=msg.key?.remoteJid||body?.data?.key?.remoteJid||'';
       const telefone=remoteJid.replace('@s.whatsapp.net','').replace('@g.us','');
       console.log('TELEFONE:', telefone, 'JID:', remoteJid);
       if(!telefone){console.log('SEM_TELEFONE');return;}
       if(remoteJid.includes('@g.us')){console.log('GRUPO');return;}
       const numeroMarina=(process.env.NUMERO_MARINA||'').replace(/\D/g,'');
       if(telefone===numeroMarina){console.log('MARINA_SELF');return;}
-      let texto=msg.message?.conversation||msg.message?.extendedTextMessage?.text||'';
+      let texto=msg.message?.conversation||msg.message?.extendedTextMessage?.text||body?.data?.message?.conversation||body?.data?.message?.extendedTextMessage?.text||'';
       let midiaBase64=null;
       let midiaMime=null;
 
