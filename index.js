@@ -489,13 +489,15 @@ app.post('/webhook',(req,res)=>{
       // Função para baixar mídia via Evolution API
       async function baixarMidia(messageId){
         try{
+          console.log('Tentando baixar mídia, messageId:', messageId);
           const r=await fetch(`${process.env.EVO_URL}/chat/getBase64FromMediaMessage/${process.env.EVO_INSTANCE}`,{
             method:'POST',
             headers:{'Content-Type':'application/json','apikey':process.env.EVO_KEY},
-            body:JSON.stringify({message:{key:{id:messageId}}})
+            body:JSON.stringify({message:{key:{id:messageId,remoteJid:remoteJid,fromMe:false}}})
           });
           const d=await r.json();
-          return d?.base64||d?.data?.base64||null;
+          console.log('Resposta download mídia:', JSON.stringify(d).substring(0,200));
+          return d?.base64||d?.data?.base64||d?.mediaUrl||null;
         }catch(e){console.error('Erro download mídia:',e.message);return null;}
       }
 
@@ -520,9 +522,10 @@ app.post('/webhook',(req,res)=>{
       if(docMsg){
         midiaMime=docMsg.mimetype||'application/pdf';
         midiaBase64=body?.data?.media||body?.media||await baixarMidia(messageId);
+        console.log('PDF base64 obtido:', midiaBase64?'SIM ('+midiaBase64.length+' chars)':'NÃO');
         if(!midiaBase64){
-          // PDF não baixado — pedir imagem ao candidato
-          await enviarWA(telefone,'Recebi seu documento! Para garantir a leitura, pode me enviar também como *foto* ou *imagem*? Fica mais fácil de visualizar os dados. 😊');
+          console.log('PDF não baixado — pedindo foto ao candidato');
+          await enviarWA(telefone,'Recebi seu documento! 📄 Para garantir a leitura correta, pode me enviar também como *foto* ou *imagem*? Fica mais fácil de visualizar os dados. 😊');
           return;
         }
       }
