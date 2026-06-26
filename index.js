@@ -135,7 +135,7 @@ async function chamarClaude(mensagens, systemPrompt){
   const resp=await fetch('https://api.anthropic.com/v1/messages',{
     method:'POST',
     headers:{'Content-Type':'application/json','x-api-key':process.env.ANTHROPIC_API_KEY,'anthropic-version':'2023-06-01'},
-    body:JSON.stringify({model:'claude-opus-4-6',max_tokens:1500,system:systemPrompt,messages:mensagens})
+    body:JSON.stringify({model:'claude-sonnet-4-6',max_tokens:1500,system:systemPrompt,messages:mensagens})
   });
   const data=await resp.json();
   return data.content?.[0]?.text||'';
@@ -176,7 +176,7 @@ Responda APENAS o JSON, sem markdown.`}]
     const resp=await fetch('https://api.anthropic.com/v1/messages',{
       method:'POST',
       headers:{'Content-Type':'application/json','x-api-key':process.env.ANTHROPIC_API_KEY,'anthropic-version':'2023-06-01'},
-      body:JSON.stringify({model:'claude-opus-4-6',max_tokens:800,messages:[{role:'user',content}]})
+      body:JSON.stringify({model:'claude-sonnet-4-6',max_tokens:800,messages:[{role:'user',content}]})
     });
     const data=await resp.json();
     const texto=data.content?.[0]?.text||'';
@@ -213,7 +213,6 @@ REGRAS DE TRIAGEM:
 async function processarMensagem(telefone, mensagemTexto, midiaBase64, midiaMime){
   if(!conversas[telefone]){
     conversas[telefone]={historico:[],estado:{etapa:'inicio',nome:null,funcao:null,certificados:[],experiencia:null,disponibilidade:null},iniciadoEm:new Date().toISOString()};
-    // Salvar início de triagem no Supabase
     await supaUpsert('triagens',{
       telefone,
       etapa:'inicio',
@@ -276,13 +275,9 @@ async function processarMensagem(telefone, mensagemTexto, midiaBase64, midiaMime
       const dadosBrutos=match[1];
       const campos={};
       dadosBrutos.split('|').forEach(p=>{const i=p.indexOf('=');if(i>0){campos[p.slice(0,i).trim().toLowerCase()]=p.slice(i+1).trim();}});
-      
-      // Atualizar estado
       conv.estado.etapa='aprovado';
       if(campos.nome) conv.estado.nome=campos.nome;
       if(campos.funcao) conv.estado.funcao=campos.funcao;
-
-      // Salvar em candidatos_aprovados no Supabase
       await supaInsert('candidatos_aprovados',{
         telefone,
         nome:campos.nome||conv.estado.nome||null,
@@ -293,8 +288,6 @@ async function processarMensagem(telefone, mensagemTexto, midiaBase64, midiaMime
         resumo_completo:dadosBrutos,
         aprovado_em:new Date().toISOString()
       });
-
-      // Atualizar triagem
       await supaUpdate('triagens',{telefone},{
         etapa:'aprovado',
         nome:campos.nome||null,
@@ -302,8 +295,6 @@ async function processarMensagem(telefone, mensagemTexto, midiaBase64, midiaMime
         dados:campos,
         atualizado_em:new Date().toISOString()
       });
-
-      // Enviar ao grupo WhatsApp
       await enviarAprovadoParaGrupo(dadosBrutos,telefone);
     }
     const respostaLimpa=resposta.replace(/\[\[APROVADO\|.+?\]\]/g,'').trim();
@@ -311,7 +302,6 @@ async function processarMensagem(telefone, mensagemTexto, midiaBase64, midiaMime
     return respostaLimpa;
   }
 
-  // Atualizar etapa na triagem periodicamente
   if(conv.historico.length%3===0){
     await supaUpdate('triagens',{telefone},{
       etapa:conv.estado.etapa||'em_andamento',
@@ -353,8 +343,12 @@ app.post('/webhook',(req,res)=>{
   setImmediate(async()=>{
     try{
       const body=req.body;
-      const evento=(body?.event||'').toLowerCase().replace('mensagens_upsert','messages.upsert');
-      if(evento!=='messages.upsert') return;
+
+      // ✅ CORREÇÃO v3.9.1: aceitar evento em qualquer capitalização
+      const evento=(body?.event||'').toUpperCase();
+      console.log(`Evento recebido: ${evento}`);
+      if(evento!=='MESSAGES_UPSERT') return;
+
       const msg=body?.data?.messages?.[0]||body?.data?.message;
       if(!msg) return;
       if(msg.key?.fromMe) return;
@@ -411,11 +405,6 @@ app.get('/candidatos', async(req,res)=>{
   const senha=req.headers['x-app-senha']||req.query.senha;
   if(senha!==process.env.APP_SENHA){return res.status(401).json({erro:'Não autorizado'});}
   try{
-    const [aprovados,triagens]=await Promise.all([
-      supaSelect('candidatos_aprovados',{}),
-      supaSelect('triagens',{})
-    ]);
-    // Busca todos (sem filtro) — Supabase retorna tudo
     const rA=await fetch(`${SUPA_URL}/rest/v1/candidatos_aprovados?select=*&order=aprovado_em.desc`,{headers:{'apikey':SUPA_KEY,'Authorization':`Bearer ${SUPA_KEY}`}});
     const rT=await fetch(`${SUPA_URL}/rest/v1/triagens?select=*&order=atualizado_em.desc`,{headers:{'apikey':SUPA_KEY,'Authorization':`Bearer ${SUPA_KEY}`}});
     res.json({aprovados:await rA.json(),triagens:await rT.json()});
@@ -444,8 +433,8 @@ app.post('/claude',async(req,res)=>{
 
 // ── Status ───────────────────────────────────────────────────────────────────
 app.get('/',(req,res)=>{
-  res.json({status:'Hunters Manpower Webhook ativo!',versao:'3.9',supabase:!!SUPA_URL});
+  res.json({status:'Hunters Manpower Webhook ativo!',versao:'3.9.1',supabase:!!SUPA_URL});
 });
 
 const PORT=process.env.PORT||3001;
-app.listen(PORT,()=>console.log(`Webhook v3.9 rodando na porta ${PORT}`));
+app.listen(PORT,()=>console.log(`Webhook v3.9.1 rodando na porta ${PORT}`));
