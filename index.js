@@ -486,28 +486,45 @@ app.post('/webhook',(req,res)=>{
       let midiaBase64=null;
       let midiaMime=null;
 
+      // Função para baixar mídia via Evolution API
+      async function baixarMidia(messageId){
+        try{
+          const r=await fetch(`${process.env.EVO_URL}/chat/getBase64FromMediaMessage/${process.env.EVO_INSTANCE}`,{
+            method:'POST',
+            headers:{'Content-Type':'application/json','apikey':process.env.EVO_KEY},
+            body:JSON.stringify({message:{key:{id:messageId}}})
+          });
+          const d=await r.json();
+          return d?.base64||d?.data?.base64||null;
+        }catch(e){console.error('Erro download mídia:',e.message);return null;}
+      }
+
+      const messageId=msg.key?.id||'';
+
       // Áudio
       const audioMsg=msg.message?.audioMessage||msg.message?.pttMessage;
       if(audioMsg){
         midiaMime=audioMsg.mimetype||'audio/ogg';
-        const mediaData=body?.data?.media||body?.media;
-        if(mediaData) midiaBase64=mediaData;
+        midiaBase64=body?.data?.media||body?.media||await baixarMidia(messageId);
       }
 
       // Imagem
       const imagemMsg=msg.message?.imageMessage;
       if(imagemMsg){
         midiaMime=imagemMsg.mimetype||'image/jpeg';
-        const mediaData=body?.data?.media||body?.media;
-        if(mediaData) midiaBase64=mediaData;
+        midiaBase64=body?.data?.media||body?.media||await baixarMidia(messageId);
       }
 
-      // Documento
+      // Documento (PDF)
       const docMsg=msg.message?.documentMessage;
       if(docMsg){
         midiaMime=docMsg.mimetype||'application/pdf';
-        const mediaData=body?.data?.media||body?.media;
-        if(mediaData) midiaBase64=mediaData;
+        midiaBase64=body?.data?.media||body?.media||await baixarMidia(messageId);
+        if(!midiaBase64){
+          // PDF não baixado — pedir imagem ao candidato
+          await enviarWA(telefone,'Recebi seu documento! Para garantir a leitura, pode me enviar também como *foto* ou *imagem*? Fica mais fácil de visualizar os dados. 😊');
+          return;
+        }
       }
 
       if(!texto&&!midiaBase64) return;
