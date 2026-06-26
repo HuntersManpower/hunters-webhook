@@ -407,7 +407,7 @@ async function processarMensagem(telefone, mensagemTexto, midiaBase64, midiaMime
       conv.estado.etapa='aprovado';
       if(campos.nome) conv.estado.nome=campos.nome;
       if(campos.funcao) conv.estado.funcao=campos.funcao;
-      await supaInsert('candidatos_aprovados',{
+      await supaUpsert('candidatos_aprovados',{
         telefone,
         nome:campos.nome||conv.estado.nome||null,
         funcao:campos.funcao||conv.estado.funcao||null,
@@ -416,7 +416,7 @@ async function processarMensagem(telefone, mensagemTexto, midiaBase64, midiaMime
         disponibilidade:campos.disponibilidade||null,
         resumo_completo:dadosBrutos,
         aprovado_em:new Date().toISOString()
-      });
+      },'telefone');
       await supaUpdate('triagens',{telefone},{
         etapa:'aprovado',
         nome:campos.nome||null,
