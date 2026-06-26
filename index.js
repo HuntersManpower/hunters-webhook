@@ -345,25 +345,21 @@ app.post('/webhook',(req,res)=>{
       const body=req.body;
 
       // ✅ CORREÇÃO v3.9.1: aceitar evento em qualquer capitalização
+      console.log('PAYLOAD:', JSON.stringify(body).substring(0,600));
       const evento=(body?.event||'').toUpperCase();
-      console.log('PAYLOAD:',JSON.stringify(body).substring(0,500));
-      console.log(`Evento recebido: ${evento}`);
-      if(evento!=='MESSAGES_UPSERT') return;
-
+      console.log(`Evento: ${evento}`);
+      if(evento!=='MESSAGES_UPSERT'){console.log('IGNORADO_EVENTO');return;}
       const msg=body?.data?.messages?.[0]||body?.data?.message;
-      if(!msg) return;
-      if(msg.key?.fromMe) return;
-
-      const telefone=msg.key?.remoteJid?.replace('@s.whatsapp.net','').replace('@g.us','');
-      if(!telefone) return;
-
-      // Ignorar grupos
-      if(msg.key?.remoteJid?.includes('@g.us')) return;
-
-      // Ignorar próprio número Marina
+      console.log('MSG:', JSON.stringify(msg||null).substring(0,200));
+      if(!msg){console.log('MSG_NULA');return;}
+      if(msg.key?.fromMe){console.log('FROM_ME');return;}
+      const remoteJid=msg.key?.remoteJid||'';
+      const telefone=remoteJid.replace('@s.whatsapp.net','').replace('@g.us','');
+      console.log('TELEFONE:', telefone, 'JID:', remoteJid);
+      if(!telefone){console.log('SEM_TELEFONE');return;}
+      if(remoteJid.includes('@g.us')){console.log('GRUPO');return;}
       const numeroMarina=(process.env.NUMERO_MARINA||'').replace(/\D/g,'');
-      if(telefone===numeroMarina) return;
-
+      if(telefone===numeroMarina){console.log('MARINA_SELF');return;}
       let texto=msg.message?.conversation||msg.message?.extendedTextMessage?.text||'';
       let midiaBase64=null;
       let midiaMime=null;
