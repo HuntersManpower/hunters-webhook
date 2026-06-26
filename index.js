@@ -501,7 +501,8 @@ app.post('/webhook',(req,res)=>{
         }catch(e){console.error('Erro download mídia:',e.message);return null;}
       }
 
-      const messageId=msg.key?.id||'';
+      const messageId=msg.key?.id||body?.data?.key?.id||'';
+      console.log('messageId:', messageId);
 
       // Áudio
       const audioMsg=msg.message?.audioMessage||msg.message?.pttMessage;
@@ -518,9 +519,10 @@ app.post('/webhook',(req,res)=>{
       }
 
       // Documento (PDF)
-      const docMsg=msg.message?.documentMessage;
+      const docMsg=msg.message?.documentMessage||body?.data?.message?.documentMessage;
       if(docMsg){
         midiaMime=docMsg.mimetype||'application/pdf';
+        console.log('docMsg detectado, mimetype:', midiaMime, 'messageId:', messageId);
         midiaBase64=body?.data?.media||body?.media||await baixarMidia(messageId);
         console.log('PDF base64 obtido:', midiaBase64?'SIM ('+midiaBase64.length+' chars)':'NÃO');
         if(!midiaBase64){
