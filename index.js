@@ -167,12 +167,11 @@ async function lerDocumento(base64, mimeType){
   const isPdf=mimeType==='application/pdf';
   if(!isImagem&&!isPdf) return null;
   try{
+    const instrucao=`Extraia os dados deste certificado marítimo. Retorne SOMENTE o JSON abaixo preenchido, sem texto antes, sem texto depois, sem markdown:
+{"tipo_cert":"nome do certificado","emissor":"empresa emissora","nome_titular":"nome completo","data_emissao":"DD/MM/AAAA","data_validade":"DD/MM/AAAA ou null","tem_carimbo_marinha":false,"funcao":null,"observacoes":null}`;
     const content=isImagem
-      ? [{type:'image',source:{type:'base64',media_type:mimeType,data:base64}},
-         {type:'text',text:`Analise este certificado/documento marítimo. Extraia em JSON:
-{"tipo_cert":"nome do certificado","emissor":"empresa emissora","nome_titular":"nome completo","data_emissao":"DD/MM/AAAA ou AAAA-MM-DD","data_validade":"DD/MM/AAAA ou null","tem_carimbo_marinha":true/false,"funcao":"função se mencionada","observacoes":"qualquer info relevante"}
-Responda APENAS o JSON, sem markdown.`}]
-      : [{type:'text',text:`Documento PDF em base64: ${base64.substring(0,100)}... Extraia dados do certificado em JSON conforme instrução.`}];
+      ? [{type:'image',source:{type:'base64',media_type:mimeType,data:base64}},{type:'text',text:instrucao}]
+      : [{type:'document',source:{type:'base64',media_type:'application/pdf',data:base64}},{type:'text',text:instrucao}];
     const resp=await fetch('https://api.anthropic.com/v1/messages',{
       method:'POST',
       headers:{'Content-Type':'application/json','x-api-key':process.env.ANTHROPIC_API_KEY,'anthropic-version':'2023-06-01'},
@@ -180,8 +179,11 @@ Responda APENAS o JSON, sem markdown.`}]
     });
     const data=await resp.json();
     const texto=data.content?.[0]?.text||'';
-    const clean=texto.replace(/```json|```/g,'').trim();
-    return JSON.parse(clean);
+    console.log('Resposta lerDocumento:', texto.substring(0,200));
+    // Extrair JSON mesmo que venha com texto ao redor
+    const match=texto.match(/\{[\s\S]*\}/);
+    if(!match) throw new Error('JSON não encontrado na resposta');
+    return JSON.parse(match[0]);
   }catch(e){console.error('Leitura doc:',e.message);return null;}
 }
 
