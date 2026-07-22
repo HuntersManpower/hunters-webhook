@@ -8,11 +8,9 @@ app.use((req,res,next)=>{
   if(req.method==='OPTIONS') return res.sendStatus(200);
   next();
 });
-
 // ── Supabase (REST direto, sem SDK) ──────────────────────────────────────────
 const SUPA_URL = process.env.SUPABASE_URL || '';
 const SUPA_KEY = process.env.SUPABASE_SECRET_KEY || '';
-
 async function supaInsert(tabela, dados){
   if(!SUPA_URL||!SUPA_KEY) return;
   try{
@@ -23,7 +21,6 @@ async function supaInsert(tabela, dados){
     });
   }catch(e){console.error(`Supabase insert ${tabela}:`,e.message);}
 }
-
 async function supaUpsert(tabela, dados, campoConflito){
   if(!SUPA_URL||!SUPA_KEY) return;
   try{
@@ -34,7 +31,6 @@ async function supaUpsert(tabela, dados, campoConflito){
     });
   }catch(e){console.error(`Supabase upsert ${tabela}:`,e.message);}
 }
-
 async function supaUpdate(tabela, filtro, dados){
   if(!SUPA_URL||!SUPA_KEY) return;
   try{
@@ -46,7 +42,6 @@ async function supaUpdate(tabela, filtro, dados){
     });
   }catch(e){console.error(`Supabase update ${tabela}:`,e.message);}
 }
-
 async function supaSelect(tabela, filtro){
   if(!SUPA_URL||!SUPA_KEY) return null;
   try{
@@ -57,18 +52,15 @@ async function supaSelect(tabela, filtro){
     return await r.json();
   }catch(e){console.error(`Supabase select ${tabela}:`,e.message);return null;}
 }
-
 // ── Constantes e estado ──────────────────────────────────────────────────────
 const conversas={};
 const aprovadosEnviados={};
-
 const VALIDADE_CERT={
   'NR-37':5*365,'NR-35':2*365,'NR-10':2*365,'NR-20':2*365,
   'NR-33':365,'NR-23':365,'NR-05':365,'NR-36':365,'NR-34-ESTANQUEIDADE':365,
   'THUET':4*365,'CBSP-HOMOLOGADO':5*365,'CBSP-PROVISORIO':90,
   'CA-EBS':5*365,'GMDSS':5*365,'STCW':5*365,'CIR':5*365
 };
-
 const GLOSSARIO={
   'cbsp':'Certificado Básico de Segurança em Plataformas',
   'thuet':'Técnicas de Sobrevivência e Resgate (OPITO)',
@@ -83,7 +75,6 @@ const GLOSSARIO={
   'bosun':'Contramestre','pumpman':'Bombeador / Operador de Carga',
   'osc':'Operador de Sonda','moc':'Motorista de Convés'
 };
-
 const FUNCOES_MARITIMAS=[
   'CLC','CCB','1ON','2ON','MCB','CTR','MNC','MOC','MAC',
   'OSM','1OM','2OM','CDM','ELT','MNM','MOM','MAM',
@@ -92,7 +83,6 @@ const FUNCOES_MARITIMAS=[
   'Sup Merg','Cargo Tech','OGD','TST','Mont And','BBD','Mec',
   'Sold','Cald','Tec Plan','Mooring Master','ROP'
 ];
-
 // Matriz SBM
 const MATRIZ_SBM={
   eliminatorios_sempre:['CBSP','THUET','CA-EBS'],
@@ -101,7 +91,6 @@ const MATRIZ_SBM={
   hunters_fornece:['NR-33','NR-35'],
   pmsi_obrigatorio_nao_eliminatorio:true
 };
-
 // ── Helpers de data / validade ───────────────────────────────────────────────
 function detectarTipoCert(nomeCert){
   if(!nomeCert) return null;
@@ -111,7 +100,6 @@ function detectarTipoCert(nomeCert){
   }
   return null;
 }
-
 function calcularValidade(dataEmissao, tipoCert, temCarimboMarinha){
   let dias=null;
   if(tipoCert==='CBSP'||tipoCert==='CBSP-HOMOLOGADO'||tipoCert==='CBSP-PROVISORIO'){
@@ -124,12 +112,10 @@ function calcularValidade(dataEmissao, tipoCert, temCarimboMarinha){
   d.setDate(d.getDate()+dias);
   return d;
 }
-
 function certificadoValido(dataValidade){
   if(!dataValidade) return null;
   return new Date(dataValidade)>new Date();
 }
-
 // ── Chamada Anthropic ────────────────────────────────────────────────────────
 async function chamarClaude(mensagens, systemPrompt){
   const resp=await fetch('https://api.anthropic.com/v1/messages',{
@@ -140,7 +126,6 @@ async function chamarClaude(mensagens, systemPrompt){
   const data=await resp.json();
   return data.content?.[0]?.text||'';
 }
-
 // ── Transcrição de áudio ─────────────────────────────────────────────────────
 async function transcreverAudio(audioBase64, mimeType){
   try{
@@ -157,10 +142,10 @@ async function transcreverAudio(audioBase64, mimeType){
       method:'POST',headers:{...form.getHeaders(),'Authorization':`Bearer ${process.env.OPENAI_API_KEY}`},body:form
     });
     const d=await r.json();
+    if(!d.text){console.error('Transcrição sem texto — resposta Whisper:',JSON.stringify(d).substring(0,300));}
     return d.text||null;
   }catch(e){console.error('Transcrição:',e.message);return null;}
 }
-
 // ── Leitura de imagem/PDF ────────────────────────────────────────────────────
 async function lerDocumento(base64, mimeType){
   const isImagem=mimeType.startsWith('image/');
@@ -186,23 +171,17 @@ async function lerDocumento(base64, mimeType){
     return JSON.parse(match[0]);
   }catch(e){console.error('Leitura doc:',e.message);return null;}
 }
-
 // ── Sistema de triagem Marina ────────────────────────────────────────────────
 function systemPromptMarina(estado){
   const hoje=new Date().toLocaleDateString('pt-BR',{timeZone:'America/Sao_Paulo'});
   return `Você é Marina, recrutadora virtual da Hunters Manpower — empresa especializada em mão de obra marítima e offshore com mais de 25 anos de história.
-
 Seu estilo: profissional, cordial, objetiva. UMA pergunta por vez. Nunca liste tudo de uma vez.
-
 ⚠️ DATA DE HOJE: ${hoje} — use esta data para verificar se certificados estão válidos ou vencidos.
-
 Estado atual do candidato:
 ${JSON.stringify(estado,null,2)}
-
 ═══════════════════════════════════════════════
 FUNÇÕES MARÍTIMAS E OFFSHORE — GLOSSÁRIO COMPLETO
 ═══════════════════════════════════════════════
-
 NÁUTICA / CONVÉS (cadeia STCW Convés):
 - CLC = Capitão de Longo Curso (comando máximo de embarcações de longo curso — STCW II/2)
 - CCB = Capitão de Cabotagem (comando em cabotagem — STCW II/2)
@@ -213,7 +192,6 @@ NÁUTICA / CONVÉS (cadeia STCW Convés):
 - MNC = Marinheiro de Náutica / Convés (sem STCW obrigatório)
 - MOC = Motorista de Convés (sem STCW obrigatório)
 - MAC = Marinheiro Auxiliar de Convés
-
 MÁQUINAS (cadeia STCW Máquinas — SEPARADA da convés):
 - OSM = Oficial Superior de Máquinas / Chefe de Máquinas (STCW III/2)
 - 1OM = Primeiro Oficial de Máquinas (STCW III/1 ou III/2)
@@ -223,12 +201,10 @@ MÁQUINAS (cadeia STCW Máquinas — SEPARADA da convés):
 - MNM = Marinheiro de Náutica de Máquinas
 - MOM = Motorista de Máquinas
 - MAM = Marinheiro Auxiliar de Máquinas
-
 SAÚDE / OUTROS A BORDO:
 - CZR = Cozinheiro de Bordo
 - TAA = Taifeiro / Auxiliar de Câmara
 - ENF = Enfermeiro de Bordo
-
 OFFSHORE / PLATAFORMAS:
 - IST = Inspetor de Equipamentos
 - Tec Mec = Técnico de Mecânica
@@ -251,33 +227,27 @@ OFFSHORE / PLATAFORMAS:
 - Mooring Master = Mestre de Manobra
 - ROP = Responsável de Operação de Plataforma
 - Operador de Carga (JD31) = Bombeador / Pumpman (cadeia Máquinas, STCW III/4)
-
 TERMINOLOGIA OFFSHORE:
 - FPSO = Floating Production Storage and Offloading
 - PLSV = Pipe Laying Support Vessel
 - ROV = Remotely Operated Vehicle
 - DP = Dynamic Positioning
 - DSV = Diving Support Vessel
-
 ═══════════════════════════════════════════════
 HIERARQUIA STCW (NORMAM-13/DPC)
 ═══════════════════════════════════════════════
-
 CADEIA CONVÉS: II/2 > II/1 > II/3 > II/4
 CADEIA MÁQUINAS: III/2 > III/1 > III/3 = III/7
 As cadeias são SEPARADAS — convés não substitui máquinas e vice-versa.
-
 REGRAS STCW:
 - Aprove quem tem nível IGUAL OU SUPERIOR na MESMA cadeia
 - 2OM pode ter III/1, III/2 ou III/3 — rankeie pelo certificado apresentado, nunca fixe pelo cargo
 - CTR TEM STCW (II/3 ou II/4)
 - BCO/Supervisor de Carga: mínimo STCW II/2
 - Pumpman/Operador de Carga (JD31): CIR de CDM + STCW III/4
-
 ═══════════════════════════════════════════════
 CERTIFICADOS — VALIDADES
 ═══════════════════════════════════════════════
-
 - CBSP homologado (com carimbo da Marinha): 5 anos
 - CBSP provisório (sem carimbo da Marinha): 90 dias
 - THUET (OPITO): 4 anos | Emissoras autorizadas: RelyOn Nutec, West Group, FCO Offshore
@@ -286,47 +256,36 @@ CERTIFICADOS — VALIDADES
 - STCW: 5 anos
 - NR-37: 5 anos | NR-35: 2 anos | NR-10: 2 anos
 - NR-33: 1 ano | NR-23: 1 ano | NR-05: 1 ano | NR-36: 1 ano | NR-34 Estanqueidade: 1 ano
-
 ═══════════════════════════════════════════════
 MATRIZ SBM OFFSHORE
 ═══════════════════════════════════════════════
-
 ELIMINATÓRIOS SEMPRE (TODAS as funções SBM):
 → CBSP + THUET + CA-EBS (os três, válidos, comprovados por foto/PDF)
 → CA-EBS é eliminatório SEMPRE — NUNCA diga que é "só para equipes de emergência"
-
 ELIMINATÓRIO SE A FUNÇÃO EXIGIR:
 → GMDSS
-
 CRÍTICOS — Hunters NÃO fornece (avisar com urgência):
 → NR-10, NR-37, NR-13 A/B, Inspeção de Andaime, Estanqueidade, Combate a Incêndio Avançado, Operações Avançadas de Carga em Petroleiros
-
 HUNTERS FORNECE (tranquilizar o candidato):
 → NR-33, NR-35
-
 PADRÃO — pendência, não eliminatório:
 → PMSI (treinamento online interno da SBM, feito antes de embarcar — NUNCA eliminatório)
-
 DOCUMENTOS MARÍTIMOS POR FUNÇÃO (SBM):
 → BCO / Supervisor de Carga: CIR + STCW mínimo II/2
 → MCB / MNC / Marinheiro de Convés: CIR
 → Operador de Carga (JD31/Pumpman): CIR de CDM + STCW III/4
-
 ═══════════════════════════════════════════════
 REGRAS DE ANÁLISE DE DOCUMENTOS
 ═══════════════════════════════════════════════
-
 - NUNCA aceite data que o candidato apenas digitou ou falou — peça sempre a FOTO
 - NUNCA invente validade — se não conseguir ler a data, peça foto mais clara
 - Use a data de validade impressa no documento; só calcule se não houver validade impressa
 - CBSP provisório vencido (mais de 90 dias): informar que precisa do homologado
 - Foto ilegível: pedir nova foto com boa iluminação, sem reflexo, documento plano
 - Emissora desconhecida (THUET): aceitar provisoriamente + alertar + pedir onde fez o curso
-
 ═══════════════════════════════════════════════
 REGRAS DE TRIAGEM
 ═══════════════════════════════════════════════
-
 1. Colete em ordem: nome completo → função → certificados (fotos) → experiência → disponibilidade
 2. UMA pergunta por vez
 3. Candidato inapto: encerre com gentileza, incentive a buscar certificados
@@ -335,7 +294,6 @@ REGRAS DE TRIAGEM
 6. Falta de cortesia é eliminatória
 7. VALORES DA HUNTERS: disponibilidade, educação, bom comportamento, inglês (oficiais), experiência e caráter`;
 }
-
 // ── Processamento principal ──────────────────────────────────────────────────
 async function processarMensagem(telefone, mensagemTexto, midiaBase64, midiaMime){
   if(!conversas[telefone]){
@@ -348,10 +306,8 @@ async function processarMensagem(telefone, mensagemTexto, midiaBase64, midiaMime
       atualizado_em:new Date().toISOString()
     },'telefone');
   }
-
   const conv=conversas[telefone];
   let textoFinal=mensagemTexto||'';
-
   // Áudio → transcrição
   if(midiaBase64&&midiaMime&&midiaMime.startsWith('audio/')){
     const transcricao=await transcreverAudio(midiaBase64,midiaMime);
@@ -362,7 +318,6 @@ async function processarMensagem(telefone, mensagemTexto, midiaBase64, midiaMime
       return 'Desculpe, não consegui entender o áudio. Pode digitar sua mensagem?';
     }
   }
-
   // Imagem/PDF → leitura de certificado
   if(midiaBase64&&midiaMime&&(midiaMime.startsWith('image/')||midiaMime==='application/pdf')){
     const dadosCert=await lerDocumento(midiaBase64,midiaMime);
@@ -382,9 +337,7 @@ async function processarMensagem(telefone, mensagemTexto, midiaBase64, midiaMime
       textoFinal='[Imagem/documento enviado — não foi possível extrair dados automaticamente]';
     }
   }
-
   if(!textoFinal.trim()) return null;
-
   // Verificar glossário
   const textoLower=textoFinal.toLowerCase();
   for(const [sigla,descricao] of Object.entries(GLOSSARIO)){
@@ -392,11 +345,8 @@ async function processarMensagem(telefone, mensagemTexto, midiaBase64, midiaMime
       return `*${sigla.toUpperCase()}*: ${descricao}.`;
     }
   }
-
   conv.historico.push({role:'user',content:textoFinal});
-
   const resposta=await chamarClaude(conv.historico,systemPromptMarina(conv.estado));
-
   // Detectar aprovação
   if(resposta.includes('[[APROVADO|')){
     const match=resposta.match(/\[\[APROVADO\|(.+?)\]\]/);
@@ -430,7 +380,6 @@ async function processarMensagem(telefone, mensagemTexto, midiaBase64, midiaMime
     conv.historico.push({role:'assistant',content:respostaLimpa});
     return respostaLimpa;
   }
-
   if(conv.historico.length%3===0){
     await supaUpdate('triagens',{telefone},{
       etapa:conv.estado.etapa||'em_andamento',
@@ -440,18 +389,15 @@ async function processarMensagem(telefone, mensagemTexto, midiaBase64, midiaMime
       atualizado_em:new Date().toISOString()
     });
   }
-
   conv.historico.push({role:'assistant',content:resposta});
   return resposta;
 }
-
 // ── Envio WhatsApp ───────────────────────────────────────────────────────────
 async function enviarWA(telefone,mensagem){
   try{
     await fetch(`${process.env.EVO_URL}/message/sendText/${process.env.EVO_INSTANCE}`,{method:'POST',headers:{'Content-Type':'application/json','apikey':process.env.EVO_KEY},body:JSON.stringify({number:telefone,text:mensagem})});
   }catch(e){console.error('Erro WA:',e);}
 }
-
 async function enviarAprovadoParaGrupo(dadosBrutos,telefoneCandidato){
   if(!process.env.GRUPO_ID){console.error('GRUPO_ID não configurado.');return;}
   if(telefoneCandidato&&aprovadosEnviados[telefoneCandidato]){return;}
@@ -465,14 +411,12 @@ async function enviarAprovadoParaGrupo(dadosBrutos,telefoneCandidato){
     console.log(`Aprovado enviado ao grupo: ${campos.nome||telefone}`);
   }catch(e){console.error('Erro grupo:',e);}
 }
-
 // ── Webhook Evolution API ────────────────────────────────────────────────────
 app.post('/webhook',(req,res)=>{
   res.sendStatus(200);
   setImmediate(async()=>{
     try{
       const body=req.body;
-
       // ✅ CORREÇÃO v3.9.1: aceitar evento em qualquer capitalização
       console.log('PAYLOAD:', JSON.stringify(body).substring(0,600));
       const evento=(body?.event||'').toUpperCase().replace('.','_');
@@ -492,7 +436,6 @@ app.post('/webhook',(req,res)=>{
       let texto=msg.message?.conversation||msg.message?.extendedTextMessage?.text||body?.data?.message?.conversation||body?.data?.message?.extendedTextMessage?.text||'';
       let midiaBase64=null;
       let midiaMime=null;
-
       // Função para baixar mídia via Evolution API
       async function baixarMidia(messageId){
         try{
@@ -507,24 +450,34 @@ app.post('/webhook',(req,res)=>{
           return d?.base64||d?.data?.base64||d?.mediaUrl||null;
         }catch(e){console.error('Erro download mídia:',e.message);return null;}
       }
-
       const messageId=msg.key?.id||body?.data?.key?.id||'';
       console.log('messageId:', messageId);
-
       // Áudio
       const audioMsg=msg.message?.audioMessage||msg.message?.pttMessage;
       if(audioMsg){
         midiaMime=audioMsg.mimetype||'audio/ogg';
+        console.log('audioMsg detectado, mimetype:', midiaMime, 'messageId:', messageId);
         midiaBase64=body?.data?.media||body?.media||await baixarMidia(messageId);
+        console.log('Áudio base64 obtido:', midiaBase64?'SIM ('+midiaBase64.length+' chars)':'NÃO');
+        if(!midiaBase64){
+          console.log('Áudio não baixado — avisando candidato');
+          await enviarWA(telefone,'Recebi seu áudio, mas não consegui processá-lo agora. Pode tentar reenviar ou escrever a mensagem em texto, por favor? 🙏');
+          return;
+        }
       }
-
       // Imagem
       const imagemMsg=msg.message?.imageMessage;
       if(imagemMsg){
         midiaMime=imagemMsg.mimetype||'image/jpeg';
+        console.log('imagemMsg detectado, mimetype:', midiaMime, 'messageId:', messageId);
         midiaBase64=body?.data?.media||body?.media||await baixarMidia(messageId);
+        console.log('Imagem base64 obtida:', midiaBase64?'SIM ('+midiaBase64.length+' chars)':'NÃO');
+        if(!midiaBase64){
+          console.log('Imagem não baixada — avisando candidato');
+          await enviarWA(telefone,'Recebi sua imagem, mas não consegui processá-la agora. Pode tentar reenviar, por favor? 🙏');
+          return;
+        }
       }
-
       // Documento (PDF)
       const docMsg=msg.message?.documentMessage||body?.data?.message?.documentMessage;
       if(docMsg){
@@ -538,16 +491,13 @@ app.post('/webhook',(req,res)=>{
           return;
         }
       }
-
       if(!texto&&!midiaBase64) return;
-
       console.log(`Mensagem de ${telefone}: ${texto||'[mídia]'}`);
       const resposta=await processarMensagem(telefone,texto,midiaBase64,midiaMime);
       if(resposta) await enviarWA(telefone,resposta);
     }catch(e){console.error('Erro webhook:',e);}
   });
 });
-
 // ── Endpoint de consulta para o app ─────────────────────────────────────────
 app.get('/candidatos', async(req,res)=>{
   const senha=req.headers['x-app-senha']||req.query.senha;
@@ -558,14 +508,12 @@ app.get('/candidatos', async(req,res)=>{
     res.json({aprovados:await rA.json(),triagens:await rT.json()});
   }catch(e){res.status(500).json({erro:e.message});}
 });
-
 // ── Login ────────────────────────────────────────────────────────────────────
 app.post('/login',(req,res)=>{
   const {senha}=req.body||{};
   if(senha&&senha===process.env.APP_SENHA){res.json({ok:true});}
   else{res.status(401).json({ok:false});}
 });
-
 // ── Proxy Claude (para o app) ────────────────────────────────────────────────
 app.post('/claude',async(req,res)=>{
   try{
@@ -578,11 +526,9 @@ app.post('/claude',async(req,res)=>{
     res.json(d);
   }catch(e){res.status(500).json({error:e.message});}
 });
-
 // ── Status ───────────────────────────────────────────────────────────────────
 app.get('/',(req,res)=>{
   res.json({status:'Hunters Manpower Webhook ativo!',versao:'3.9.1',supabase:!!SUPA_URL});
 });
-
 const PORT=process.env.PORT||3001;
 app.listen(PORT,()=>console.log(`Webhook v3.9.1 rodando na porta ${PORT}`));
