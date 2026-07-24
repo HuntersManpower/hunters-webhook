@@ -118,13 +118,21 @@ function certificadoValido(dataValidade){
 }
 // ── Chamada Anthropic ────────────────────────────────────────────────────────
 async function chamarClaude(mensagens, systemPrompt){
-  const resp=await fetch('https://api.anthropic.com/v1/messages',{
-    method:'POST',
-    headers:{'Content-Type':'application/json','x-api-key':process.env.ANTHROPIC_API_KEY,'anthropic-version':'2023-06-01'},
-    body:JSON.stringify({model:'claude-sonnet-4-6',max_tokens:1500,system:systemPrompt,messages:mensagens})
-  });
-  const data=await resp.json();
-  return data.content?.[0]?.text||'';
+  try{
+    const resp=await fetch('https://api.anthropic.com/v1/messages',{
+      method:'POST',
+      headers:{'Content-Type':'application/json','x-api-key':process.env.ANTHROPIC_API_KEY,'anthropic-version':'2023-06-01'},
+      body:JSON.stringify({model:'claude-sonnet-4-6',max_tokens:1500,system:systemPrompt,messages:mensagens})
+    });
+    const data=await resp.json();
+    if(!resp.ok||!data.content?.[0]?.text){
+      console.error('chamarClaude falhou — status:',resp.status,'resposta:',JSON.stringify(data).substring(0,500));
+    }
+    return data.content?.[0]?.text||'';
+  }catch(e){
+    console.error('chamarClaude exceção:',e.message);
+    return '';
+  }
 }
 // ── Transcrição de áudio ─────────────────────────────────────────────────────
 async function transcreverAudio(audioBase64, mimeType){
