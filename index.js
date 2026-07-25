@@ -403,8 +403,12 @@ async function processarMensagem(telefone, mensagemTexto, midiaBase64, midiaMime
 // ── Envio WhatsApp ───────────────────────────────────────────────────────────
 async function enviarWA(telefone,mensagem){
   try{
-    await fetch(`${process.env.EVO_URL}/message/sendText/${process.env.EVO_INSTANCE}`,{method:'POST',headers:{'Content-Type':'application/json','apikey':process.env.EVO_KEY},body:JSON.stringify({number:telefone,text:mensagem})});
-  }catch(e){console.error('Erro WA:',e);}
+    console.log(`enviarWA → ${telefone}: "${mensagem.substring(0,120)}"`);
+    const r=await fetch(`${process.env.EVO_URL}/message/sendText/${process.env.EVO_INSTANCE}`,{method:'POST',headers:{'Content-Type':'application/json','apikey':process.env.EVO_KEY},body:JSON.stringify({number:telefone,text:mensagem})});
+    const d=await r.json().catch(()=>null);
+    if(!r.ok){console.error('enviarWA FALHOU — status:',r.status,'resposta:',JSON.stringify(d).substring(0,400));}
+    else{console.log('enviarWA OK — status:',r.status);}
+  }catch(e){console.error('Erro WA:',e.message);}
 }
 async function enviarAprovadoParaGrupo(dadosBrutos,telefoneCandidato){
   if(!process.env.GRUPO_ID){console.error('GRUPO_ID não configurado.');return;}
@@ -503,6 +507,7 @@ app.post('/webhook',(req,res)=>{
       if(!texto&&!midiaBase64) return;
       console.log(`Mensagem de ${telefone}: ${texto||'[mídia]'}`);
       const resposta=await processarMensagem(telefone,texto,midiaBase64,midiaMime);
+      console.log('processarMensagem retornou:', resposta?`"${resposta.substring(0,150)}"`:'(vazio/null — nada será enviado)');
       if(resposta) await enviarWA(telefone,resposta);
     }catch(e){console.error('Erro webhook:',e);}
   });
