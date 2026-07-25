@@ -433,7 +433,6 @@ app.post('/webhook',(req,res)=>{
       const msg=body?.data?.messages?.[0]||body?.data?.message||body?.data;
       console.log('MSG:', JSON.stringify(msg||null).substring(0,200));
       if(!msg){console.log('MSG_NULA');return;}
-      if(msg.key?.fromMe){console.log('FROM_ME');return;}
       const remoteJid=msg.key?.remoteJid||body?.data?.key?.remoteJid||'';
       const telefone=remoteJid.replace('@s.whatsapp.net','').replace('@g.us','');
       console.log('TELEFONE:', telefone, 'JID:', remoteJid);
@@ -441,6 +440,8 @@ app.post('/webhook',(req,res)=>{
       if(remoteJid.includes('@g.us')){console.log('GRUPO');return;}
       const numeroMarina=(process.env.NUMERO_MARINA||'').replace(/\D/g,'');
       if(telefone===numeroMarina){console.log('MARINA_SELF');return;}
+      const ehFromMe=msg.key?.fromMe||msg.fromMe||body?.data?.fromMe||body?.data?.key?.fromMe||false;
+      if(ehFromMe){console.log('FROM_ME — mensagem enviada pelo próprio número, ignorando');return;}
       let texto=msg.message?.conversation||msg.message?.extendedTextMessage?.text||body?.data?.message?.conversation||body?.data?.message?.extendedTextMessage?.text||'';
       let midiaBase64=null;
       let midiaMime=null;
