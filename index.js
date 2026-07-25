@@ -138,16 +138,14 @@ async function chamarClaude(mensagens, systemPrompt){
 async function transcreverAudio(audioBase64, mimeType){
   try{
     const audioBuffer=Buffer.from(audioBase64,'base64');
-    const {Readable}=require('stream');
-    const FormData=require('form-data');
-    const form=new FormData();
-    const stream=Readable.from(audioBuffer);
     const ext=mimeType.includes('ogg')?'ogg':mimeType.includes('mp4')?'mp4':'webm';
-    form.append('file',stream,{filename:`audio.${ext}`,contentType:mimeType});
+    const form=new FormData();
+    const blob=new Blob([audioBuffer],{type:mimeType});
+    form.append('file',blob,`audio.${ext}`);
     form.append('model','whisper-1');
     form.append('language','pt');
     const r=await fetch('https://api.openai.com/v1/audio/transcriptions',{
-      method:'POST',headers:{...form.getHeaders(),'Authorization':`Bearer ${process.env.OPENAI_API_KEY}`},body:form
+      method:'POST',headers:{'Authorization':`Bearer ${process.env.OPENAI_API_KEY}`},body:form
     });
     const d=await r.json();
     if(!d.text){console.error('Transcrição sem texto — resposta Whisper:',JSON.stringify(d).substring(0,300));}
