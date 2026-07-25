@@ -466,7 +466,7 @@ app.post('/webhook',(req,res)=>{
       const messageId=msg.key?.id||body?.data?.key?.id||'';
       console.log('messageId:', messageId);
       // Áudio
-      const audioMsg=msg.message?.audioMessage||msg.message?.pttMessage;
+      const audioMsg=msg.message?.audioMessage||msg.message?.pttMessage||body?.data?.message?.audioMessage||body?.data?.message?.pttMessage;
       if(audioMsg){
         midiaMime=audioMsg.mimetype||'audio/ogg';
         console.log('audioMsg detectado, mimetype:', midiaMime, 'messageId:', messageId);
@@ -479,7 +479,7 @@ app.post('/webhook',(req,res)=>{
         }
       }
       // Imagem
-      const imagemMsg=msg.message?.imageMessage;
+      const imagemMsg=msg.message?.imageMessage||body?.data?.message?.imageMessage;
       if(imagemMsg){
         midiaMime=imagemMsg.mimetype||'image/jpeg';
         console.log('imagemMsg detectado, mimetype:', midiaMime, 'messageId:', messageId);
