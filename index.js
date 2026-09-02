@@ -8,6 +8,20 @@ app.use((req,res,next)=>{
   if(req.method==='OPTIONS') return res.sendStatus(200);
   next();
 });
+// ── Verificação do Webhook (Meta) ────────────────────────────────────────────
+app.get('/webhook', (req, res) => {
+  const VERIFY_TOKEN = process.env.META_VERIFY_TOKEN || 'hunters2026';
+  const mode = req.query['hub.mode'];
+  const token = req.query['hub.verify_token'];
+  const challenge = req.query['hub.challenge'];
+  if (mode === 'subscribe' && token === VERIFY_TOKEN) {
+    console.log('WEBHOOK_VERIFICADO_META');
+    res.status(200).send(challenge);
+  } else {
+    console.log('WEBHOOK_VERIFICACAO_FALHOU', { mode, token });
+    res.sendStatus(403);
+  }
+});
 // ── Supabase (REST direto, sem SDK) ──────────────────────────────────────────
 const SUPA_URL = process.env.SUPABASE_URL || '';
 const SUPA_KEY = process.env.SUPABASE_SECRET_KEY || '';
@@ -270,41 +284,23 @@ CRÍTICOS — Hunters NÃO fornece (avisar com urgência):
 → NR-10, NR-37, NR-13 A/B, Inspeção de Andaime, Estanqueidade, Combate a Incêndio Avançado, Operações Avançadas de Carga em Petroleiros
 HUNTERS FORNECE (tranquilizar o candidato):
 → NR-33, NR-35
-
 CERTIFICAÇÕES OBRIGATÓRIAS (X) E CONDICIONAIS (C) POR FUNÇÃO — identifique a função do candidato e cobre TODOS os itens X como eliminatórios. Itens C só eliminam se a vaga específica exigir (pergunte se não estiver claro). Se a função não estiver na lista, aplique o fallback: CBSP + THUET + CA-EBS sempre, GMDSS se a vaga exigir.
-
 • Técnico de Laboratório (JD21): X = CBSP, NR33 Entrada Espaço Confinado (16h), NR-35, NR-37 Básico, NR-37 Avançado, THUET, CA-EBS. C = nenhum. Experiência: formação em Química, 2 anos como Téc. de Laboratório em processamento de hidrocarbonetos (FPSO de preferência).
-
 • 2º Oficial de Máquinas / Operador de Manutenção (JD32): X = CBSP, NR33 (16h), NR-35, NR-13 Caldeiras (Anexo I-A), NR-13 Vasos de Pressão (Anexo I-B), NR-34 Estanqueidade, NR-37 Básico, NR-37 Avançado, THUET, CA-EBS. C = nenhum. Experiência: 3 anos embarcado em máquinas (STCW A-III/4 ou EOOW A-III/1), solda/ajuste, VLCC ou FPSO desejável.
-
 • Técnico de Elétrica (JD24): X = CBSP, NR33 (16h), NR-35, NR-10 Básico, NR-37 Básico, NR-37 Avançado, THUET, CA-EBS. C = nenhum. Experiência: ONC/HNC/NVQ Nível 3 em Manutenção Elétrica, mín. 5 anos (2 offshore desejável), COMP-EX.
-
 • Técnico de Instrumentação (JD25): X = CBSP, NR33 (16h), NR-35, NR-10 Básico, NR-37 Básico, NR-37 Avançado, THUET, CA-EBS. C = nenhum. Experiência: N/SVQ/HNC/HND em Instrumentação, 3 anos (offshore de preferência), COMP-EX de preferência.
-
 • Técnico de Mecânica (JD26): X = CBSP, NR33 (16h), NR-35, NR-13 Vasos de Pressão (Anexo I-B), NR-37 Básico, NR-37 Avançado, THUET, CA-EBS. C = MCIA (Helideck). Experiência: N/SVQ/HNC/HND em Mecânica, 3 anos (offshore de preferência).
-
 • Almoxarife (JD28): X = CBSP, NR33 (16h), NR-35, NR-37 Básico, NR-37 Avançado, THUET, CA-EBS. C = Mercadorias Perigosas via Aérea, Mercadorias Perigosas por Mar (IMDG). Experiência: 3 anos na indústria marítima/petróleo (FPSO de preferência), sistemas de inventário em PC.
-
 • Assistente de Almoxarife (JD38): X = CBSP, NR33 (16h), NR-35, NR-37 Básico, NR-37 Avançado, THUET, CA-EBS. C = Mercadorias Perigosas via Aérea, Mercadorias Perigosas por Mar (IMDG). Experiência: 1 ano na indústria marítima/petróleo (FPSO de preferência).
-
 • Supervisor de Carga / BCO (JD10): X = CBSP, Combate a Incêndio Avançado, Curso Avançado Operações de Carga em Petroleiros, Proficiência em Deveres de Segurança Designados, NR33 Supervisor de Espaço Confinado (40h), Rigging NR-37/NR-34, NR-35, NR-34 Estanqueidade, NR-37 Básico, NR-37 Avançado, Certificação BCO (Ballast Control Operator), THUET, CA-EBS. C = CESS. Requer também STCW mínimo II/2 + CIR. Experiência: STCW II/2 (Imediato ≥3000 GT), 3 anos em petroleiros de óleo cru (VLCC de preferência) como OOW, FPSO uma vantagem.
-
 • Operador de Carga / Pumpman (JD31): X = CBSP, Curso Básico Operações de Carga em Navios-Tanque, NR33 (16h), Rigging NR-37/NR-34, NR-35, NR-34 Estanqueidade, NR-37 Básico, NR-37 Avançado, THUET, CA-EBS. C = CESS. Requer também CIR de CDM + STCW III/4. Experiência: 3 anos como Bombeador (Pumpman) em petroleiros (VLCC de preferência), STCW A-II/4.
-
 • Mestre de Cabotagem / Contramestre (JD34): X = CBSP, Proficiência em Deveres de Segurança Designados, NR33 (16h), Rigging NR-37/NR-34, NR-35, NR-37 Básico, NR-37 Avançado, THUET, CA-EBS. C = CESS, Mercadorias Perigosas via Aérea, MCIA (Helideck), Mercadorias Perigosas por Mar (IMDG). Experiência: STCW A-II/4 mínimo, 5 anos em navios oceânicos (2+ como Contramestre em petroleiros, VLCC de preferência).
-
 • Marinheiro de Convés / MCB / MNC (JD36): X = CBSP, NR33 (16h), Rigging NR-37/NR-34, NR-35, NR-37 Básico, NR-37 Avançado, THUET, CA-EBS. C = CESS, Mercadorias Perigosas via Aérea, MCIA, Mercadorias Perigosas por Mar (IMDG). Requer também CIR. Experiência: mais de 2 anos em função de convés (offshore ou marítimo), STCW A-II/5.
-
 • Homem de Área (JD-GP): X = CBSP, NR33 (16h), Rigging NR-37/NR-34, NR-35, NR-37 Básico, NR-37 Avançado, THUET, CA-EBS. C = CESS, Mercadorias Perigosas via Aérea, MCIA, Mercadorias Perigosas por Mar (IMDG). Experiência: ensino fundamental completo, inglês básico, mín. 1 ano comprovado em movimentação de carga offshore.
-
 • Operador de Guindaste (JD35): X = CBSP, Proficiência em Deveres de Segurança Designados, NR33 (16h), Rigging NR-37/NR-34, Curso Complementar Operador de Guindaste NR-37, NR-35, NR-37 Básico, NR-37 Avançado, THUET, Operações de Guindaste Offshore Nível 3, CA-EBS. C = Mercadorias Perigosas via Aérea, MCIA, Mercadorias Perigosas por Mar (IMDG). Experiência: Operação de Guindaste Nível 3, experiência offshore em guindaste/rigging/convés, STCW A-II/4 de preferência.
-
 • Técnico de Segurança (JD7): X = CBSP, Combate a Incêndio Avançado, NR33 Supervisor (40h), Rigging NR-37/NR-34, Inspeção de Andaime NR-34, NR-35, NR-34 Estanqueidade, NR-37 Básico, NR-37 Avançado, THUET, CA-EBS. C = Mercadorias Perigosas via Aérea, MCIA, Mercadorias Perigosas por Mar (IMDG). Experiência: NEBOSH Cert mínimo (Diploma uma vantagem), 5 anos em produção de hidrocarbonetos ou como Téc. de Segurança, FPSO de preferência.
-
 • Técnico de Segurança Assistente (JD8): X = CBSP, NR33 (16h), Rigging NR-37/NR-34, Inspeção de Andaime NR-34, NR-35, NR-37 Básico, NR-37 Avançado, THUET, CA-EBS. C = Mercadorias Perigosas via Aérea, MCIA, Mercadorias Perigosas por Mar (IMDG). Experiência: manutenção de FFE/LSA, operações de helicóptero, FPSO de preferência.
-
 • Operador de Rádio / ROP (JD29): X = CBSP, Curso de Radioperador GMDSS, NR-37 Básico, NR-37 Avançado, THUET, CA-EBS. C = NR-35. Experiência: qualificação em radiooperações ou STCW A-IV/2, Excel/Word, manutenção de telecom desejável.
-
 • Operador de Produção (JD30): X = CBSP, NR33 (16h), NR-35, NR-37 Básico, NR-37 Avançado, THUET, CA-EBS. C = nenhum. Experiência: N/SVQ Processamento de Hidrocarbonetos Nível 2, 2 anos em processo/utilidades, conhecimento de ESD/F&G/DCS.
 ═══════════════════════════════════════════════
 REGRAS DE ANÁLISE DE DOCUMENTOS
